@@ -149,6 +149,8 @@ function render() {
   $("st-pending").textContent = String(state.uploadStats.pending);
   $("fin-pending").textContent = String(state.uploadStats.pending);
   $("st-wakelock").textContent = state.wakeLockStatus;
+  show("st-error-box", Boolean(state.uploadStats.lastError));
+  $("st-error").textContent = state.uploadStats.lastError || "-";
   $("rec-elapsed").textContent = fmtDuration(recordedMs());
   if (state.test) $("summary").textContent = JSON.stringify(currentSummary(), null, 2);
 }

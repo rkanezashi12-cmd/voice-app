@@ -100,8 +100,22 @@ gcloud run deploy "$SERVICE" --region="$REGION" --source=. \
 step "5. サービス URL・CORS・動作確認"
 SERVICE_URL="$(gcloud run services describe "$SERVICE" --region="$REGION" --format='value(status.url)')"
 gcloud run services update "$SERVICE" --region="$REGION" --update-env-vars="SERVICE_URL=${SERVICE_URL}" --quiet
+# Cloud Run のサービスには URL が2種類ある（…-<番号>.<region>.run.app と …-xxxx-an.a.run.app）。どちらで開いても送れるよう両方を許可する
+ALL_URLS="$(gcloud run services describe "$SERVICE" --region="$REGION" \
+  --format='value(metadata.annotations."run.googleapis.com/urls")' 2>/dev/null || true)"
 CORS="$(mktemp)"
-echo "[{\"origin\": [\"${SERVICE_URL}\"], \"method\": [\"PUT\"], \"responseHeader\": [\"Content-Type\"], \"maxAgeSeconds\": 3600}]" >"$CORS"
+SERVICE_URL="$SERVICE_URL" ALL_URLS="$ALL_URLS" python3 - "$CORS" <<'PY'
+import json, os, sys
+origins = {os.environ["SERVICE_URL"]}
+try:
+    origins.update(json.loads(os.environ.get("ALL_URLS") or "[]"))
+except ValueError:
+    pass
+rule = {"origin": sorted(origins), "method": ["PUT"], "responseHeader": ["Content-Type"], "maxAgeSeconds": 3600}
+with open(sys.argv[1], "w") as f:
+    json.dump([rule], f)
+print("CORS で許可する URL:", ", ".join(sorted(origins)))
+PY
 gcloud storage buckets update "gs://${BUCKET}" --cors-file="$CORS"
 curl -fsS "${SERVICE_URL}/health"
 echo
