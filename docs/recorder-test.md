@@ -5,7 +5,14 @@ Web ページでの録音を運用に使えるかを判断するためのテス�
 
 ## 0. 準備
 
-1. README「録音テスト用の GCP 設定」まで済ませ、Cloud Run の URL を確認する。
+1. Cloud Shell で次を実行する（バケット・権限・デプロイ・テスト用 URL の発行までを一度に行う）。
+
+   ```bash
+   git clone -b claude/meeting-transcription-app-setup-nkaz1m https://github.com/rkanezashi12-cmd/voice-app.git
+   cd voice-app && bash scripts/setup_recorder_test.sh
+   ```
+
+   最後に表示される URL が手順3で iPhone に送るもの。別の URL が必要なときは下の2の方法でも発行できる。
 2. テスト用 URL を発行する（どちらか）。
 
    ```bash
