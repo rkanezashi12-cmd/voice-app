@@ -1,0 +1,28 @@
+[project]
+name = "meeting-notes"
+version = "0.1.0"
+description = "商談の文字起こし・要約を Zoho CRM に蓄積するバックエンド（Cloud Run）"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = ["web", "desktop", "widgets"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "RUF"]
+ignore = [
+    "RUF001", # 全角記号を含む日本語文字列を許可する
+    "RUF002",
+    "RUF003",
+    "S101",   # tests で assert を使う
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S108"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
