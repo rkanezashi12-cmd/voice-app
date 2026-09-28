@@ -69,7 +69,12 @@ async def issue_recording_url(body: IssueRequest, client: ApiClientDep, rt: Runt
     url = f"{settings.need('service_url')}/recorder/#{token}"
     crm_updated = False
     if not body.test:
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "CRM への書き込みは Step 2 で実装します")
+        # 商談記録の recording_url に書き込む（DRY_RUN のときはログのみ）
+        cs = rt.client_services(client.client_id)
+        f = cs.field_map.meeting_record
+        crm = await cs.crm()
+        await crm.update_record(f.module, body.record_id, {f.recording_url: url})
+        crm_updated = not crm.dry_run
     log_event(
         logger,
         "recording.url_issued",

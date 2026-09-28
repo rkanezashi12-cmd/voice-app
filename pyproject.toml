@@ -12,6 +12,7 @@ extend-exclude = ["web", "desktop", "widgets"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "RUF"]
 ignore = [
+    "E501",   # コードの折り返しは ruff format に任せる（日本語のコメントは全角2文字幅で数えられるため）
     "RUF001", # 全角記号を含む日本語文字列を許可する
     "RUF002",
     "RUF003",

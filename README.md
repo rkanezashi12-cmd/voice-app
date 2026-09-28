@@ -1,7 +1,7 @@
 # 商談の文字起こし・要約アプリ（バックエンド＋対面録音ページ）
 
 オンライン商談（Zoom / Teams / Google Meet）と対面商談の会話を文字起こしし、Gemini で補正・要約して
-Zoho CRM（日本 DC）の「商談記録」に保存する。前提とルールは [CLAUDE.md](CLAUDE.md) を参照。
+Zoho CRM の「商談記録」に保存する（Zoho の DC はクライアント設定で切り替える。デモ環境は US）。前提とルールは [CLAUDE.md](CLAUDE.md) を参照。
 
 | 入口 | 仕組み | 状態 |
 |---|---|---|
@@ -53,7 +53,8 @@ gcloud iam service-accounts add-iam-policy-binding $RUN_SA --project=$PROJECT \
   --member=serviceAccount:$RUN_SA --role=roles/iam.serviceAccountTokenCreator
 
 # 使うシークレットだけ読めるようにする
-for s in backend-api-key recording-token-secret recall-api-key recall-webhook-secret; do
+for s in backend-api-key recording-token-secret recall-api-key recall-webhook-secret \
+         zoho-client-id zoho-client-secret zoho-refresh-token; do
   gcloud secrets add-iam-policy-binding $s --project=$PROJECT \
     --member=serviceAccount:$RUN_SA --role=roles/secretmanager.secretAccessor
 done

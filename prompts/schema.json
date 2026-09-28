@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {"type": ["string", "null"]},
+    "issues": {"type": "array", "items": {"type": "string"}},
+    "needs": {"type": "array", "items": {"type": "string"}},
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "action": {"type": "string"},
+          "owner": {"type": ["string", "null"]},
+          "due": {"type": ["string", "null"], "description": "YYYY-MM-DD"}
+        },
+        "required": ["action", "owner", "due"]
+      }
+    },
+    "category": {"type": ["string", "null"]},
+    "competitors": {"type": "array", "items": {"type": "string"}},
+    "budget": {"type": ["string", "null"]},
+    "decision_maker": {"type": ["string", "null"]}
+  },
+  "required": ["summary", "issues", "needs", "next_actions", "category", "competitors", "budget", "decision_maker"]
+}

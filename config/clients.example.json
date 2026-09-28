@@ -6,8 +6,7 @@
       "timezone": "Asia/Tokyo",
       "own_email_domains": ["example.co.jp"],
       "zoho": {
-        "accounts_url": "https://accounts.zoho.jp",
-        "api_domain": "https://www.zohoapis.jp",
+        "dc": "us",
         "client_id": "sm:projects/voice-ai-510014/secrets/zoho-client-id/versions/latest",
         "client_secret": "sm:projects/voice-ai-510014/secrets/zoho-client-secret/versions/latest",
         "refresh_token": "sm:projects/voice-ai-510014/secrets/zoho-refresh-token/versions/latest"

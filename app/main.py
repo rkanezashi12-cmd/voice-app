@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -15,8 +16,11 @@ from app.clients import ClientRegistry
 from app.config import Settings, get_settings
 from app.errors import AppError, ConfigError, ExternalServiceError, PermanentError
 from app.logs import log_event, set_trace, setup_logging
-from app.routers import recordings
+from app.pipeline.process import ProcessRequest, run_process
+from app.pipeline.recall_flow import handle_recall_event
+from app.routers import bots, desktop, internal, recordings, webhooks
 from app.runtime import Runtime
+from app.services.tasks import LocalTaskQueue
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,22 @@ def build_runtime(settings: Settings) -> Runtime:
     return Runtime(settings, ClientRegistry.load(settings.clients_config, settings.clients_config_json))
 
 
+def _register_local_tasks(rt: Runtime) -> None:
+    """TASKS_BACKEND=local のとき、Cloud Tasks の代わりに同じプロセスで処理する。"""
+    queue = rt.tasks if rt.settings.tasks_backend == "local" else None
+    if not isinstance(queue, LocalTaskQueue):
+        return
+
+    async def process(payload: dict[str, Any]) -> None:
+        await run_process(rt, ProcessRequest.model_validate(payload), final_attempt=True)
+
+    async def recall_event(payload: dict[str, Any]) -> None:
+        await handle_recall_event(rt, payload["client_id"], payload["payload"])
+
+    queue.register("/internal/process", process)
+    queue.register("/internal/recall-event", recall_event)
+
+
 def create_app(runtime: Runtime | None = None) -> FastAPI:
     settings = runtime.settings if runtime else get_settings()
     setup_logging(settings.log_level)
@@ -48,6 +68,7 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         rt = runtime or build_runtime(settings)
         app.state.runtime = rt
+        _register_local_tasks(rt)
         log_event(logger, "app.started", dry_run=settings.dry_run, clients=len(rt.registry.all()))
         try:
             yield
@@ -92,5 +113,9 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
         return {"status": "ok", "dry_run": settings.dry_run}
 
     app.include_router(recordings.router)
+    app.include_router(bots.router)
+    app.include_router(desktop.router)
+    app.include_router(webhooks.router)
+    app.include_router(internal.router)
     app.mount("/recorder", StaticFiles(directory=RECORDER_DIR, html=True), name="recorder")
     return app

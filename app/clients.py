@@ -38,12 +38,33 @@ def _check_ref(value: str | None) -> str | None:
     return value
 
 
+# Zoho のデータセンター（DC）ごとの接続先
+ZOHO_DATA_CENTERS: dict[str, tuple[str, str]] = {
+    "us": ("https://accounts.zoho.com", "https://www.zohoapis.com"),
+    "jp": ("https://accounts.zoho.jp", "https://www.zohoapis.jp"),
+    "eu": ("https://accounts.zoho.eu", "https://www.zohoapis.eu"),
+    "in": ("https://accounts.zoho.in", "https://www.zohoapis.in"),
+    "au": ("https://accounts.zoho.com.au", "https://www.zohoapis.com.au"),
+}
+
+
 class ZohoConfig(_Model):
-    accounts_url: str = "https://accounts.zoho.jp"
-    api_domain: str = "https://www.zohoapis.jp"
+    # 既定は US（デモ環境のお客様 CRM が US DC）。クライアントごとに "dc" で切り替える
+    dc: Literal["us", "jp", "eu", "in", "au"] = "us"
+    # DC の既定の接続先を上書きするとき（通常は指定しない）
+    accounts_url: str | None = None
+    api_domain: str | None = None
     client_id: str
     client_secret: str
     refresh_token: str
+
+    @property
+    def accounts_base(self) -> str:
+        return (self.accounts_url or ZOHO_DATA_CENTERS[self.dc][0]).rstrip("/")
+
+    @property
+    def api_base(self) -> str:
+        return (self.api_domain or ZOHO_DATA_CENTERS[self.dc][1]).rstrip("/")
 
     @field_validator("client_id", "client_secret", "refresh_token")
     @classmethod

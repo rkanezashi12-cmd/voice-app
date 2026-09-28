@@ -8,7 +8,8 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 
 ## 1. 確定済みの構成（変更しない）
 
-- 画面・データの正は **Zoho CRM（日本 DC）**。Zoho Creator は使わない
+- 画面・データの正は **Zoho CRM**。Zoho Creator は使わない。DC はクライアント設定で切り替える
+  （既定 US：`accounts.zoho.com` / `www.zohoapis.com`。デモ環境のお客様 CRM は US DC）
   - スマホは Zoho CRM 公式アプリ、PC は CRM ウィジェット（別フェーズ）
 - オンライン会議は **Recall.ai 東京リージョン** `https://ap-northeast-1.recall.ai`。会議ボットは自作しない
   - お客様の本番は **Desktop Recording SDK**（ボットを会議に入れない）が標準
@@ -36,7 +37,7 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 6. **CRM への書き込みはカスタムモジュール「商談記録」「用語辞書」だけ。** 取引先・連絡先・商談などの標準モジュールは
    読み取りのみ。`app/services/crm.py` のガードで、それ以外のモジュールへの書き込みはエラーにする。削除処理は作らない。
 7. **バックエンドが作るテスト用レコードは名前の先頭に【TEST】を付ける**（`CRM_TEST_RECORDS=true` が既定）。
-8. Zoho は日本 DC（`accounts.zoho.jp` / `www.zohoapis.jp`）。`.com` を既定値にしない。
+8. Zoho の接続先は `app/clients.py` の DC 設定（`"dc": "us" | "jp" | …`）だけで決める。URL を直書きしない。
 9. プロンプトは `prompts/` のファイルで管理し、コードに埋め込まない。モデル名は環境変数。
 10. 4xx はリトライしない。429 / 5xx / 通信エラーは指数バックオフで最大3回。
 11. テストでは外部 API をすべてモックする（実 API を叩くテストは書かない。tests/conftest.py で通信を遮断している）。
