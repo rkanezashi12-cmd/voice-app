@@ -29,6 +29,7 @@ const state = {
   test: false,
   expiresAt: null,
   phase: "init", // init | ready | recording | interrupted | finishing | done | error
+  starting: false,
   settings: { ...DEFAULTS },
   stream: null,
   recorder: null,
@@ -254,6 +255,17 @@ function trackChunkWrite(promise) {
 }
 
 async function startRecording(isResume) {
+  // 二度押しで録音が二重に始まらないようにする
+  if (state.starting || state.phase === "recording") return;
+  state.starting = true;
+  try {
+    await startRecordingInner(isResume);
+  } finally {
+    state.starting = false;
+  }
+}
+
+async function startRecordingInner(isResume) {
   state.alarm.unlock();
   state.alarm.stop();
   show("overlay", false);
