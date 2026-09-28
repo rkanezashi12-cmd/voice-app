@@ -103,5 +103,6 @@ def set_trace(header_value: str | None, project_id: str | None) -> None:
     _trace.set(f"projects/{project_id}/traces/{trace_id}" if trace_id else None)
 
 
-def log_event(logger: logging.Logger, event: str, level: int = logging.INFO, **fields: Any) -> None:
-    logger.log(level, event, extra={"fields": fields})
+def log_event(logger: logging.Logger, message: str, level: int = logging.INFO, /, **fields: Any) -> None:
+    """構造化ログを1行出す。fields には ID・件数などだけを渡す（"event" などの名前も使える）。"""
+    logger.log(level, message, extra={"fields": fields})
