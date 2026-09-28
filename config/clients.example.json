@@ -1,0 +1,32 @@
+{
+  "clients": {
+    "default": {
+      "display_name": "自社（社内デモ）",
+      "api_key": "sm:projects/voice-ai-510014/secrets/backend-api-key/versions/latest",
+      "timezone": "Asia/Tokyo",
+      "own_email_domains": ["example.co.jp"],
+      "zoho": {
+        "accounts_url": "https://accounts.zoho.jp",
+        "api_domain": "https://www.zohoapis.jp",
+        "client_id": "sm:projects/voice-ai-510014/secrets/zoho-client-id/versions/latest",
+        "client_secret": "sm:projects/voice-ai-510014/secrets/zoho-client-secret/versions/latest",
+        "refresh_token": "sm:projects/voice-ai-510014/secrets/zoho-refresh-token/versions/latest"
+      },
+      "recall": {
+        "base_url": "https://ap-northeast-1.recall.ai",
+        "api_key": "sm:projects/voice-ai-510014/secrets/recall-api-key/versions/latest",
+        "webhook_secret": "sm:projects/voice-ai-510014/secrets/recall-webhook-secret/versions/latest",
+        "bot_name": "ボットの表示名（録音中と分かる名前。C7）",
+        "transcription_mode": "async",
+        "transcript_request": {"provider": {"recallai_async": {"language_code": "ja"}}},
+        "bot_recording_config": {},
+        "sdk_upload_recording_config": {},
+        "join_lead_seconds": 60
+      },
+      "field_map": {
+        "meeting_record": {"module": "Meeting_Records"},
+        "category_choices": []
+      }
+    }
+  }
+}

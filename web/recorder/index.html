@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>商談の録音</title>
+    <link rel="stylesheet" href="recorder.css" />
+  </head>
+  <body>
+    <div id="rec-bar" class="rec-bar" hidden>● 録音中 <span id="rec-elapsed">00:00:00</span></div>
+
+    <main class="page">
+      <header class="head">
+        <h1>商談の録音</h1>
+        <p id="record-info" class="muted">読み込み中…</p>
+      </header>
+
+      <p class="keep-on" role="note">録音中は画面を点けたまま置いてください</p>
+
+      <section id="view-error" class="card error" hidden>
+        <h2 id="error-title">録音できません</h2>
+        <p id="error-message"></p>
+        <button id="copy-url" type="button" class="secondary" hidden>この URL をコピー</button>
+      </section>
+
+      <section id="view-main" hidden>
+        <p id="consent" class="notice">録音を始める前に、参加者へ録音することを伝えてください。</p>
+        <p id="resume-note" class="notice" hidden></p>
+        <p id="wakelock-warning" class="warning" hidden>
+          この端末では画面の自動消灯を止められません。録音中に画面が消えると録音が止まることがあります。
+          設定 → 画面表示と明るさ → 自動ロック を「なし」にしてから録音してください。
+        </p>
+        <p id="soft-warning" class="warning" hidden></p>
+
+        <div class="controls">
+          <button id="btn-start" type="button" class="primary">録音開始</button>
+          <button id="btn-finish" type="button" class="danger" hidden>録音終了</button>
+        </div>
+
+        <dl class="stats">
+          <div><dt>状態</dt><dd id="st-state">待機中</dd></div>
+          <div><dt>送信済み</dt><dd id="st-uploaded">0</dd></div>
+          <div><dt>未送信</dt><dd id="st-pending">0</dd></div>
+          <div><dt>画面の点灯維持</dt><dd id="st-wakelock">-</dd></div>
+          <div><dt>音量</dt><dd><meter id="st-level" min="0" max="1" value="0"></meter></dd></div>
+        </dl>
+      </section>
+
+      <section id="view-finishing" class="card" hidden>
+        <h2>送信しています</h2>
+        <p>録音した音声を送っています。この画面を閉じないでください。</p>
+        <p>未送信 <strong id="fin-pending">0</strong> 件</p>
+        <div id="fin-missing" hidden>
+          <p class="warning"><span id="fin-missing-count">0</span> 件の音声がサーバーに届いていません。</p>
+          <button id="btn-retry-finish" type="button" class="secondary">もう一度送る</button>
+          <button id="btn-force-finish" type="button" class="danger">届いた分だけで完了する</button>
+        </div>
+      </section>
+
+      <section id="view-done" class="card" hidden>
+        <h2>送信が完了しました</h2>
+        <p id="done-message">文字起こしと要約を始めます。この画面は閉じてかまいません。</p>
+      </section>
+
+      <details id="test-panel" class="test-panel" hidden>
+        <summary>テスト設定・診断</summary>
+        <fieldset>
+          <legend>分割方式</legend>
+          <label><input type="radio" name="mode" value="a" checked /> A: 1分ごとに録り直す</label>
+          <label><input type="radio" name="mode" value="b" /> B: timeslice で分割</label>
+        </fieldset>
+        <label>分割の長さ（秒）<input id="chunk-seconds" type="number" min="5" max="300" value="60" /></label>
+        <label><input id="level-monitor" type="checkbox" checked /> 音量モニター（無音の検知）を使う</label>
+        <button id="btn-copy-summary" type="button" class="secondary">診断結果をコピー</button>
+        <pre id="summary" class="summary"></pre>
+        <ol id="event-log" class="event-log" reversed></ol>
+      </details>
+    </main>
+
+    <div id="overlay" class="overlay" hidden role="alertdialog" aria-labelledby="overlay-title">
+      <div class="overlay-box">
+        <h2 id="overlay-title">録音が止まりました</h2>
+        <p id="overlay-reason"></p>
+        <p>「再開」を押すと、同じ記録に続けて録音します。</p>
+        <button id="btn-resume" type="button" class="primary">再開</button>
+        <button id="btn-overlay-finish" type="button" class="secondary">録音を終える</button>
+      </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

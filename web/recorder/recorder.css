@@ -1,0 +1,266 @@
+:root {
+  --bg: #f6f7f9;
+  --fg: #1d2330;
+  --muted: #5b6475;
+  --card: #ffffff;
+  --line: #d9dde5;
+  --primary: #1f5eff;
+  --danger: #d0263a;
+  --warn-bg: #fff4d6;
+  --warn-fg: #6b4a00;
+  --rec: #d0263a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151c;
+    --fg: #e8ebf1;
+    --muted: #a4acbb;
+    --card: #1b212b;
+    --line: #2d3542;
+    --primary: #5b8cff;
+    --danger: #ff5c6f;
+    --warn-bg: #3a2f10;
+    --warn-fg: #ffd98a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+.page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.head h1 {
+  margin: 8px 0 0;
+  font-size: 22px;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.keep-on {
+  margin: 8px 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 2px solid var(--primary);
+  font-weight: 700;
+  text-align: center;
+}
+
+.notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+.warning {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.card {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 19px;
+}
+
+.error {
+  border-color: var(--danger);
+}
+
+.controls {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+button {
+  font: inherit;
+  width: 100%;
+  min-height: 56px;
+  border-radius: 12px;
+  border: 0;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--primary);
+  color: #fff;
+  font-size: 20px;
+  min-height: 72px;
+}
+
+button.danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  margin-top: 8px;
+}
+
+button:disabled {
+  opacity: 0.5;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+.stats div {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.stats dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stats dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.stats meter {
+  width: 100%;
+}
+
+.rec-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 10px 16px calc(10px);
+  padding-top: calc(10px + env(safe-area-inset-top));
+  background: var(--rec);
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+  text-align: center;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--danger);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.overlay-box {
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+}
+
+.overlay-box h2 {
+  font-size: 28px;
+  margin: 0 0 12px;
+}
+
+.overlay-box button.primary {
+  background: #fff;
+  color: var(--danger);
+}
+
+.overlay-box button.secondary {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.test-panel {
+  margin-top: 24px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.test-panel label {
+  display: block;
+  margin: 6px 0;
+}
+
+.test-panel fieldset {
+  border: 0;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.test-panel input[type="number"] {
+  width: 6em;
+  margin-left: 8px;
+  font: inherit;
+}
+
+.summary {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 12px;
+  background: var(--bg);
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.event-log {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  max-height: 320px;
+  overflow: auto;
+  padding-left: 2.5em;
+}
