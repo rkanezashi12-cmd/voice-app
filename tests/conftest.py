@@ -1,8 +1,14 @@
-"""テスト共通の偽物（外部サービスはすべてここの偽物か respx で置き換える）。"""
+"""テスト共通の偽物。
+
+外部サービス（Zoho CRM・Recall.ai・Gemini・GCS・Cloud Tasks・Secret Manager）はすべてここの偽物か respx で
+置き換える。Runtime の HTTP クライアントは NoNetwork で、実際の通信（本番 CRM など）は必ず失敗させる。
+偽物への「書き込み」は記録されるだけで、どこにも送られない。
+"""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -13,17 +19,26 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.clients import ClientRegistry
+from app.clients import ClientConfig, ClientRegistry
 from app.config import Settings
+from app.deps import tasks_oidc
+from app.errors import AppError
+from app.field_map import FieldMap
 from app.main import create_app
 from app.recording_token import issue
 from app.runtime import Runtime
+from app.services.crm import STANDARD_MODULES, CrmWriteForbidden
+from app.services.gemini import LlmResult
 from app.services.storage import StoredObject
 
 API_KEY = "test-api-key-0123456789"
 TOKEN_SECRET = "test-recording-secret"
 SERVICE_URL = "https://meeting-notes.example.run.app"
 TASKS_SA = "tasks-invoker@proj.iam.gserviceaccount.com"
+WEBHOOK_SECRET = "whsec_dGVzdC13ZWJob29rLXNlY3JldC0xMjM0NTY="
+FM = FieldMap()
+F = FM.meeting_record
+S = FM.status
 
 
 class NoNetwork(httpx.AsyncBaseTransport):
@@ -31,6 +46,9 @@ class NoNetwork(httpx.AsyncBaseTransport):
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"テストから実ネットワークに接続しようとしました: {request.url.host}")
+
+
+# ---- GCS / Cloud Tasks ----
 
 
 @dataclass
@@ -78,6 +96,236 @@ class FakeTasks:
         return True
 
 
+# ---- Zoho CRM ----
+
+
+class FakeCrm:
+    """CrmService の偽物。書き込み先のガードは本物と同じ規則で確認する。"""
+
+    def __init__(self, fm: FieldMap = FM) -> None:
+        self.fm = fm
+        self.records: dict[str, dict[str, dict[str, Any]]] = {}
+        self.writes: list[tuple[str, str, str, dict[str, Any]]] = []
+        self.coql_queries: list[str] = []
+        self.coql_rows: list[dict[str, Any]] = []
+        self.dry_run = False
+        self.fail_writes: AppError | None = None
+        self.writable_modules = frozenset({fm.meeting_record.module, fm.glossary.module})
+        self._seq = 0
+
+    def check_writable(self, module: str) -> None:
+        if module not in self.writable_modules or module in STANDARD_MODULES:
+            raise CrmWriteForbidden(f"CRM のモジュール {module} への書き込みは許可されていません")
+
+    def add(self, module: str, record_id: str, data: dict[str, Any]) -> None:
+        self.records.setdefault(module, {})[record_id] = {"id": record_id, **data}
+
+    def record(self, record_id: str, module: str | None = None) -> dict[str, Any]:
+        return self.records[module or self.fm.meeting_record.module][record_id]
+
+    def writes_to(self, record_id: str) -> list[dict[str, Any]]:
+        return [data for _, _, rid, data in self.writes if rid == record_id]
+
+    async def get_record(self, module: str, record_id: str) -> dict[str, Any] | None:
+        rec = self.records.get(module, {}).get(record_id)
+        return dict(rec) if rec else None
+
+    async def list_records(self, module: str, fields: list[str], **_: Any) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.records.get(module, {}).values()]
+
+    async def coql(self, query: str) -> list[dict[str, Any]]:
+        self.coql_queries.append(query)
+        f = self.fm.meeting_record
+        if f"from {f.module} " in query and f"where {f.recall_id} = '" in query:
+            recall_id = query.split(f"where {f.recall_id} = '", 1)[1].split("'", 1)[0]
+            rows = [r for r in self.records.get(f.module, {}).values() if r.get(f.recall_id) == recall_id]
+            return [{"id": r["id"], f.status: r.get(f.status), f.account: r.get(f.account)} for r in rows[:1]]
+        return list(self.coql_rows)
+
+    async def update_record(self, module: str, record_id: str, data: dict[str, Any]) -> None:
+        self.check_writable(module)
+        if self.fail_writes:
+            raise self.fail_writes
+        self.writes.append(("update", module, record_id, dict(data)))
+        self.records.setdefault(module, {}).setdefault(record_id, {"id": record_id}).update(data)
+
+    async def create_record(self, module: str, data: dict[str, Any]) -> str:
+        self.check_writable(module)
+        self._seq += 1
+        record_id = f"new-{self._seq}"
+        self.writes.append(("create", module, record_id, dict(data)))
+        self.add(module, record_id, data)
+        return record_id
+
+    async def upsert_record(
+        self, module: str, data: dict[str, Any], duplicate_check_fields: list[str]
+    ) -> tuple[str, str]:
+        self.check_writable(module)
+        key = duplicate_check_fields[0]
+        for rid, rec in self.records.get(module, {}).items():
+            if rec.get(key) == data.get(key):
+                self.writes.append(("upsert", module, rid, dict(data)))
+                rec.update(data)
+                return rid, "update"
+        self._seq += 1
+        record_id = f"new-{self._seq}"
+        self.writes.append(("upsert", module, record_id, dict(data)))
+        self.add(module, record_id, data)
+        return record_id, "insert"
+
+
+# ---- Recall.ai ----
+
+
+class FakeRecall:
+    def __init__(self) -> None:
+        self.bots: dict[str, dict[str, Any]] = {}
+        self.recordings: dict[str, dict[str, Any]] = {}
+        self.uploads: dict[str, dict[str, Any]] = {}
+        self.downloads: dict[str, Any] = {}
+        self.created_bots: list[dict[str, Any]] = []
+        self.transcript_requests: list[tuple[str, dict[str, Any]]] = []
+        self.deleted_bot_media: list[str] = []
+        self.deleted_recordings: list[str] = []
+        self.fail_create: AppError | None = None
+        self.fail_delete: AppError | None = None
+        self.dry_run = False
+
+    def add_bot(
+        self, bot_id: str, record_id: str, *, recording_id: str | None = "rec-1", transcript: Any = None
+    ) -> None:
+        recordings = [{"id": recording_id, "started_at": "2026-09-28T01:00:00Z"}] if recording_id else []
+        self.bots[bot_id] = {"id": bot_id, "metadata": {"record_id": record_id}, "recordings": recordings}
+        if recording_id:
+            self.add_recording(recording_id, transcript)
+
+    def add_recording(self, recording_id: str, transcript: Any = None, status: str = "done") -> None:
+        shortcuts: dict[str, Any] = {}
+        if transcript is not None:
+            url = f"https://recall-download.example/{recording_id}.json"
+            shortcuts["transcript"] = {"status": {"code": status}, "data": {"download_url": url}}
+            self.downloads[url] = transcript
+        self.recordings[recording_id] = {"id": recording_id, "media_shortcuts": shortcuts}
+
+    async def create_bot(self, **kwargs: Any) -> dict[str, Any]:
+        if self.fail_create:
+            raise self.fail_create
+        self.created_bots.append(kwargs)
+        return {"id": f"bot-{len(self.created_bots)}"}
+
+    async def get_bot(self, bot_id: str) -> dict[str, Any]:
+        return self.bots[bot_id]
+
+    async def get_recording(self, recording_id: str) -> dict[str, Any]:
+        return self.recordings[recording_id]
+
+    async def create_transcript(self, recording_id: str, request: dict[str, Any]) -> dict[str, Any]:
+        self.transcript_requests.append((recording_id, request))
+        return {"id": "tr-1"}
+
+    async def download_json(self, url: str) -> Any:
+        return self.downloads[url]
+
+    async def delete_bot_media(self, bot_id: str) -> None:
+        if self.fail_delete:
+            raise self.fail_delete
+        self.deleted_bot_media.append(bot_id)
+
+    async def delete_recording(self, recording_id: str) -> None:
+        if self.fail_delete:
+            raise self.fail_delete
+        self.deleted_recordings.append(recording_id)
+
+    async def create_sdk_upload(self, *, recording_config: Any, metadata: dict[str, str]) -> dict[str, Any]:
+        upload_id = f"upload-{len(self.uploads) + 1}"
+        self.uploads[upload_id] = {
+            "id": upload_id,
+            "metadata": metadata,
+            "recording_config": recording_config,
+        }
+        return {"id": upload_id, "upload_token": "sdk-upload-token"}
+
+    async def get_sdk_upload(self, upload_id: str) -> dict[str, Any]:
+        return self.uploads[upload_id]
+
+
+# ---- Gemini ----
+
+
+def summary_json(**overrides: Any) -> str:
+    data: dict[str, Any] = {
+        "summary": "新型治具の見積を依頼された。",
+        "issues": ["段取り替えに時間がかかる"],
+        "needs": ["納期3週間"],
+        "next_actions": [
+            {"action": "見積書を送る", "owner": "当社", "due": "2026-10-03"},
+            {"action": "図面を共有", "owner": "先方", "due": "2026-10-01"},
+        ],
+        "category": None,
+        "competitors": [],
+        "budget": "300万円程度",
+        "decision_maker": "工場長",
+    }
+    data.update(overrides)
+    return json.dumps(data, ensure_ascii=False)
+
+
+class FakeLlm:
+    """task ごとに決まった応答を返す。補正は入力をそのまま返す（replace で置換も可）。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.transcribe_outputs: list[str] = [
+            "話者A: 本日はよろしくお願いします。\n話者B: よろしくお願いします。"
+        ]
+        self.summary_output = summary_json()
+        self.replace: dict[str, str] = {}
+        self.fail: AppError | None = None
+
+    async def generate(
+        self,
+        *,
+        task: str,
+        model: str,
+        system_instruction: str,
+        parts: list[Any],
+        json_schema: dict[str, Any] | None = None,
+    ) -> LlmResult:
+        self.calls.append({"task": task, "model": model, "parts": parts, "json_schema": json_schema})
+        if self.fail:
+            raise self.fail
+        if task == "transcribe":
+            index = sum(1 for c in self.calls if c["task"] == "transcribe") - 1
+            return LlmResult(self.transcribe_outputs[min(index, len(self.transcribe_outputs) - 1)])
+        if task == "correct":
+            text = parts[-1].text
+            for a, b in self.replace.items():
+                text = text.replace(a, b)
+            return LlmResult(text)
+        return LlmResult(self.summary_output)
+
+
+# ---- クライアント単位のサービス ----
+
+
+class FakeClientServices:
+    def __init__(self, config: ClientConfig, crm: FakeCrm, recall: FakeRecall) -> None:
+        self.config = config
+        self.field_map = config.field_map
+        self._crm = crm
+        self._recall = recall
+
+    @property
+    def client_id(self) -> str:
+        return self.config.client_id
+
+    async def crm(self) -> FakeCrm:
+        return self._crm
+
+    async def recall(self) -> FakeRecall:
+        return self._recall
+
+
 def make_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
         "dry_run": False,
@@ -123,8 +371,7 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_ZOHO_CLIENT_SECRET", "zoho-client-secret")
     monkeypatch.setenv("TEST_ZOHO_REFRESH_TOKEN", "zoho-refresh-token")
     monkeypatch.setenv("TEST_RECALL_API_KEY", "recall-api-key")
-    # Svix 形式（whsec_ + base64）
-    monkeypatch.setenv("TEST_RECALL_WEBHOOK_SECRET", "whsec_dGVzdC13ZWJob29rLXNlY3JldC0xMjM0NTY=")
+    monkeypatch.setenv("TEST_RECALL_WEBHOOK_SECRET", WEBHOOK_SECRET)
 
 
 @pytest.fixture
@@ -138,24 +385,58 @@ def tasks() -> FakeTasks:
 
 
 @pytest.fixture
+def crm() -> FakeCrm:
+    return FakeCrm()
+
+
+@pytest.fixture
+def recall() -> FakeRecall:
+    return FakeRecall()
+
+
+@pytest.fixture
+def llm() -> FakeLlm:
+    return FakeLlm()
+
+
+@pytest.fixture
 def settings() -> Settings:
     return make_settings()
 
 
 @pytest.fixture
-def runtime(settings: Settings, storage: FakeStorage, tasks: FakeTasks) -> Runtime:
+def registry() -> ClientRegistry:
+    return ClientRegistry.from_dict(base_client_config())
+
+
+@pytest.fixture
+def runtime(
+    settings: Settings,
+    registry: ClientRegistry,
+    storage: FakeStorage,
+    tasks: FakeTasks,
+    crm: FakeCrm,
+    recall: FakeRecall,
+    llm: FakeLlm,
+) -> Runtime:
+    services = FakeClientServices(registry.get("default"), crm, recall)
     return Runtime(
         settings,
-        ClientRegistry.from_dict(base_client_config()),
+        registry,
         storage=storage,
         tasks=tasks,
+        llm=llm,
         http=httpx.AsyncClient(transport=NoNetwork()),
+        client_services={"default": services},
     )
 
 
 @pytest.fixture
 def client(runtime: Runtime) -> Iterator[TestClient]:
-    with TestClient(create_app(runtime)) as c:
+    app = create_app(runtime)
+    # /internal/* の OIDC 検証は test_internal_auth.py で個別に確かめる
+    app.dependency_overrides[tasks_oidc] = lambda: None
+    with TestClient(app) as c:
         yield c
 
 

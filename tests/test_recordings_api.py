@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import API_KEY, FakeStorage, FakeTasks, recording_token
+from tests.conftest import API_KEY, F, FakeCrm, FakeStorage, FakeTasks, recording_token
 
 SESSION = "1727488500123-a-abc123"
 
@@ -153,3 +153,17 @@ def test_recorder_page_is_served_with_security_headers(client: TestClient) -> No
     assert "connect-src 'self' https://storage.googleapis.com" in res.headers["Content-Security-Policy"]
     assert res.headers["Referrer-Policy"] == "no-referrer"
     assert client.get("/recorder/app.js").status_code == 200
+
+
+def test_issue_url_writes_recording_url_to_crm(client: TestClient, crm: FakeCrm) -> None:
+    res = client.post(
+        "/api/recordings",
+        json={"record_id": "5001", "start_at": "2026-10-01T10:00:00+09:00"},
+        headers={"X-API-Key": API_KEY},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["crm_updated"] is True
+    assert crm.writes_to("5001") == [{F.recording_url: body["recording_url"]}]
+    # 有効期限は商談開始から24時間
+    assert body["expires_at"].startswith("2026-10-02T01:00:00")
