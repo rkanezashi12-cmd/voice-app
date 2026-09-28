@@ -103,7 +103,7 @@ gcloud run services update "$SERVICE" --region="$REGION" --update-env-vars="SERV
 CORS="$(mktemp)"
 echo "[{\"origin\": [\"${SERVICE_URL}\"], \"method\": [\"PUT\"], \"responseHeader\": [\"Content-Type\"], \"maxAgeSeconds\": 3600}]" >"$CORS"
 gcloud storage buckets update "gs://${BUCKET}" --cors-file="$CORS"
-curl -fsS "${SERVICE_URL}/healthz"
+curl -fsS "${SERVICE_URL}/health"
 echo
 
 step "6. テスト用の録音 URL（24時間有効。iPhone の Safari で開いてください）"

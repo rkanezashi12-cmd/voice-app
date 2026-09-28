@@ -108,8 +108,9 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
         )
         return JSONResponse({"error": exc.code, "message": exc.message}, status_code=status_code)
 
-    @app.get("/healthz")
-    async def healthz() -> dict[str, object]:
+    # Cloud Run は末尾が z のパス（/healthz など）を予約しているため /health を使う
+    @app.get("/health")
+    async def health() -> dict[str, object]:
         return {"status": "ok", "dry_run": settings.dry_run}
 
     app.include_router(recordings.router)

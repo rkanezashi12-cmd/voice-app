@@ -167,3 +167,7 @@ def test_issue_url_writes_recording_url_to_crm(client: TestClient, crm: FakeCrm)
     assert crm.writes_to("5001") == [{F.recording_url: body["recording_url"]}]
     # 有効期限は商談開始から24時間
     assert body["expires_at"].startswith("2026-10-02T01:00:00")
+
+
+def test_health(client: TestClient) -> None:
+    assert client.get("/health").json() == {"status": "ok", "dry_run": False}

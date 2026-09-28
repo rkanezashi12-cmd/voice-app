@@ -97,7 +97,7 @@ cat > /tmp/cors.json <<EOF
 EOF
 gcloud storage buckets update gs://$BUCKET --cors-file=/tmp/cors.json
 
-curl -s $SERVICE_URL/healthz   # {"status":"ok","dry_run":true}
+curl -s $SERVICE_URL/health   # {"status":"ok","dry_run":true}
 ```
 
 ### 1-5. iPhone テスト
