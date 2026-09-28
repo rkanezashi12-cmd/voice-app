@@ -42,8 +42,11 @@ gcloud services enable cloudbuild.googleapis.com
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
 BUILD_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 # --source デプロイのビルドは既定のコンピュート SA で動く。新しいプロジェクトでは権限が足りないことがある
-gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${BUILD_SA}" \
-  --role=roles/cloudbuild.builds.builder --condition=None >/dev/null
+# ソースの取得（run-sources バケットの読み取り）とビルドに必要な権限を付ける。権限の反映には数分かかることがある
+for role in roles/run.builder roles/cloudbuild.builds.builder; do
+  gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${BUILD_SA}" \
+    --role="$role" --condition=None >/dev/null
+done
 
 step "2. バケット gs://${BUCKET}"
 if ! gcloud storage buckets describe "gs://${BUCKET}" >/dev/null 2>&1; then
