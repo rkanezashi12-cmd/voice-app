@@ -85,8 +85,9 @@ cd ~/voice-app && bash scripts/reprocess.sh <商談記録の ID>
 
 注意:
 
-- **処理が済んだ商談記録（状態が「完了」か「取引先未設定」）で録音し直すと、処理を飛ばして
-  （`pipeline.skipped_finished`）音声を消す。** 録音のテストは毎回新しい商談記録で行う
+- **録音のテストは毎回新しい商談記録で行う。** 処理が済んだ商談記録（状態が「完了」か「取引先未設定」）の録音用URLを開くと、
+  録音ページが「処理が済んでいます」と表示して録音させない（共通処理は二重処理を防ぐため、処理済みの記録の録音を飛ばして
+  音声を消す作りなので、録音の前に止める）
 - `DRY_RUN=false` では処理の最後に音声を消すので、`reprocess.sh` で同じ音声をやり直せるのは書き込みが済むまで
 
 書き込みを止める（`DRY_RUN=true` に戻す）ときと、今の設定を確かめるとき（`"dry_run":false` なら書き込む設定）:
@@ -117,6 +118,7 @@ curl -s "$(gcloud run services describe meeting-notes --project=voice-ai-510014 
 | `pipeline.retry` | 一時的な失敗。最大3回まで自動で再試行する |
 | `pipeline.failed` に `INVALID_MODULE` | Cloud Run のコードが古い（商談記録の API 名が変わる前のまま）。`bash scripts/deploy.sh` でデプロイし直す |
 | `pipeline.failed` に `OAUTH_SCOPE_MISMATCH` | バックエンドの Zoho 接続の権限不足。[zoho-connection.md](zoho-connection.md) の手順で発行し直す |
-| `pipeline.skipped_finished` | 処理済みの商談記録で録音し直した。新しい商談記録で録音する |
+| 録音ページに「処理が済んでいます」 | 処理済みの商談記録の録音用URLを開いた。新しい商談記録を作って録音する |
+| `pipeline.skipped_finished` | 処理済みの商談記録の音声が届いたので、処理せずに音声を消した（二重処理の防止） |
 | `correct.rejected` | 補正の結果が元の発言と大きく違うため、補正前の文字起こしを使った（処理は続く） |
 | `summarize.invalid_json` | 要約の形が崩れたので、要約だけ作り直した。2回続けて崩れると処理ごとやり直す（`pipeline.retry`） |

@@ -9,7 +9,8 @@
 set -euo pipefail
 PROJECT="${PROJECT:-voice-ai-510014}"
 MINUTES="${1:-60}"
-EVENTS=(recording.completed tasks.enqueued glossary.loaded pipeline.transcribed gemini.generated gemini.retry
+EVENTS=(recording.already_processed recording.record_not_found recording.record_check_failed
+  recording.completed tasks.enqueued glossary.loaded pipeline.transcribed gemini.generated gemini.retry
   correct.rejected summarize.invalid_json dry_run.skip crm.updated gcs.deleted pipeline.finished
   pipeline.skipped_finished pipeline.retry pipeline.failed pipeline.failure_not_recorded pipeline.unexpected_error
   auth.oidc_rejected media.delete_failed)
