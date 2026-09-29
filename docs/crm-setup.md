@@ -13,31 +13,47 @@
 
 所要時間：15分ほど。
 
-## 1. Self Client を作り、認可コードを発行する（ブラウザ）
+## 1. Self Client を用意する（ブラウザ）
 
 1. **マルサン木型の CRM の管理者アカウント**で https://api-console.zoho.com を開く
 2. 「Add Client」→「Self Client」→「Create」（既にあればそれを使う）
 3. 「Client Secret」タブの **Client ID** と **Client Secret** を控える
-4. 「Generate Code」タブで次を入れて「Create」
-   - Scope：`ZohoCRM.org.READ,ZohoCRM.settings.modules.ALL,ZohoCRM.settings.fields.ALL,ZohoCRM.settings.profiles.READ`
-   - Time Duration：10 minutes
-   - Scope Description：CRM setup
-   - 組織（ポータル）を選ぶ画面が出たら、**マルサン木型の本番組織**を選ぶ
-5. 表示された **認可コード** をコピーする（**10分で失効**。すぐに手順2へ）
 
+認可コードはまだ発行しない（10分で失効するので、手順2の途中で発行する）。
 このトークンはモジュールと項目を作るためだけのもので、バックエンドの Zoho 接続とは別物。作業が終わったら手順5で無効にする。
 
 ## 2. Cloud Shell で接続する
 
-```bash
-cd ~/voice-app && git pull
-export ZOHO_DC=com
-read -rp "Client ID: " ZOHO_CLIENT_ID && export ZOHO_CLIENT_ID
-read -rsp "Client Secret: " ZOHO_CLIENT_SECRET && export ZOHO_CLIENT_SECRET && echo
-python3 scripts/crm_setup.py exchange-code <認可コード>
-```
+**コマンドは1行ずつ貼って実行する。** 入力を待っている間に次の行まで貼ると、次の行のコマンドが値として読み込まれてしまう。
+Client Secret とトークンは画面に出さない（スクリーンショットにも写さない）。
 
-表示された `export ZOHO_REFRESH_TOKEN='...'` の行をそのまま貼って実行する。
+1. 最新にする
+
+   ```bash
+   cd ~/voice-app && git pull
+   ```
+
+2. Client ID と Secret を入れる。`Client ID:` と出たら ID を貼って Enter、`Client Secret` と出たら Secret を貼って Enter（Secret は表示されない）。
+   最後に `OK: ID 1000.… / Secret ○○文字` と出れば成功
+
+   ```bash
+   cd ~/voice-app; export ZOHO_DC=com; ZOHO_CLIENT_ID=; ZOHO_CLIENT_SECRET=; until [ -n "$ZOHO_CLIENT_ID" ]; do read -rp "Client ID: " ZOHO_CLIENT_ID || break; done; until [ -n "$ZOHO_CLIENT_SECRET" ]; do read -rsp "Client Secret（表示されません）: " ZOHO_CLIENT_SECRET || break; echo; done; export ZOHO_CLIENT_ID ZOHO_CLIENT_SECRET; echo "OK: ID ${ZOHO_CLIENT_ID:0:5}… / Secret ${#ZOHO_CLIENT_SECRET}文字"
+   ```
+
+3. api-console の Self Client の「Generate Code」タブで次を入れて「Create」し、表示された **認可コード** をコピーする（**10分で失効**。すぐに次へ）
+   - Scope：`ZohoCRM.org.READ,ZohoCRM.settings.modules.ALL,ZohoCRM.settings.fields.ALL,ZohoCRM.settings.profiles.READ`
+   - Time Duration：10 minutes
+   - Scope Description：CRM setup
+   - 組織（ポータル）を選ぶ画面が出たら、**マルサン木型の本番組織**を選ぶ
+
+4. 認可コードをリフレッシュトークンに交換する。`認可コード:` と出たらコードを貼って Enter（トークンは画面に出さずに環境変数に入る）
+
+   ```bash
+   unset ZOHO_REFRESH_TOKEN; ZOHO_CODE=; until [ -n "$ZOHO_CODE" ]; do read -rp "認可コード: " ZOHO_CODE || break; done; eval "$(python3 scripts/crm_setup.py exchange-code "$ZOHO_CODE" | grep '^export ZOHO_REFRESH_TOKEN=')"; echo "トークン: ${#ZOHO_REFRESH_TOKEN}文字（0 なら失敗）"
+   ```
+
+   0 より大きい文字数が出れば成功。0 なら、その上に出たエラーを見る
+   （`invalid_client`：Client ID / Secret の誤りか、DC が Self Client を作った場所と違う。`invalid_code`：認可コードの期限切れ・使用済み。3 からやり直す）
 
 ## 3. 接続先を確かめる（書き込みなし）
 
@@ -55,8 +71,11 @@ python3 scripts/crm_setup.py plan     # 表示だけ。何も変更しない
 python3 scripts/crm_setup.py apply    # 内容をもう一度表示し、yes と入力すると作成する
 ```
 
-最後に「完了しました。すべての項目が API 名どおりに作成されています。」と出れば終わり。
-問題が出たら、表示された内容と `logs/crm_setup-*.jsonl` の最後の数行を送る（トークンは記録していない）。
+最後に「完了しました。すべての項目が API 名どおりに作成されています。」と、作成した項目の設定（種類・文字数・重複不可など）が出れば終わり。
+あとから確かめるときは `python3 scripts/crm_setup.py show-fields`（書き込みなし）。
+
+途中で止まったら、表示された内容と `logs/crm_setup-*.jsonl` の最後の数行を送る（トークンは記録していない）。
+原因を直して `apply` をもう一度流せば、足りないものだけを作る。
 
 ## 5. 後片付け
 
@@ -84,7 +103,7 @@ python3 scripts/crm_setup.py apply    # 内容をもう一度表示し、yes と
 | API 名 | **MeetingRecords**（アンダースコア不可） |
 | 権限（プロファイル） | すべてのプロファイル（スクリプトが自動で付ける） |
 
-名前の項目 **「商談記録名」**（API 名 `Name`）と **「商談記録の担当者」**（`Owner`）はモジュールと一緒に作られる。
+名前の項目 **「商談記録名」**（API 名 `Name`、120 文字まで）と **「商談記録の担当者」**（`Owner`）はモジュールと一緒に作られる。
 
 #### 項目
 
@@ -97,9 +116,9 @@ python3 scripts/crm_setup.py apply    # 内容をもう一度表示し、yes と
 | 5 | 商談 | ルックアップ | `Deal` | 関連付けるモジュール：商談 |
 | 6 | 先方担当者 | 1行 | `Contact_Name` | 文字数 255 |
 | 7 | 開始日時 | 日付/時刻 | `Start_At` | |
-| 8 | 会議URL | URL | `Meeting_URL` | |
-| 9 | 録音用URL | URL | `Recording_URL` | バックエンドが書き込む |
-| 10 | Recall ID | 1行 | `Recall_ID` | 文字数 255。**「重複する値を許可しない」に✓** |
+| 8 | 会議URL | URL | `Meeting_URL` | 450 文字まで（Zoho の既定） |
+| 9 | 録音用URL | URL | `Recording_URL` | バックエンドが書き込む。450 文字まで |
+| 10 | Recall ID | 1行 | `Recall_ID` | 文字数 255。**「重複する値を許可しない」に✓**（大文字・小文字は区別しない。Zoho は区別する設定を API で受け付けない） |
 | 11 | エラー内容 | 複数行（小） | `Error_Message` | |
 | 12 | 要約 | 複数行（大） | `Summary` | |
 | 13 | 課題 | 複数行（大） | `Issues` | |
