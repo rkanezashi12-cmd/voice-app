@@ -79,8 +79,8 @@ python3 scripts/crm_setup.py apply    # 内容をもう一度表示し、yes と
 
 ## 5. 後片付け
 
-- api-console.zoho.com の Self Client で、このトークンを無効にする（「Revoke」）か、Self Client ごと削除する
-- Cloud Shell を閉じれば環境変数は消える
+- Cloud Shell を閉じる（環境変数に入れた作業用のトークンも消える。画面にもファイルにも残していない）
+- **Self Client は削除しない。** バックエンドの接続（docs/zoho-connection.md）も同じ Self Client を使うので、削除するとバックエンドが CRM に接続できなくなる
 
 ## 6. 画面で行う仕上げ（任意）
 

@@ -50,8 +50,10 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 ```
 ZohoCRM.modules.custom.ALL, ZohoCRM.modules.accounts.READ, ZohoCRM.modules.contacts.READ,
 ZohoCRM.modules.deals.READ, ZohoCRM.coql.READ, ZohoCRM.users.READ,
-ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ
+ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ, ZohoCRM.org.READ
 ```
+
+`ZohoCRM.org.READ` は接続先の組織の確認に使う（読み取りのみ）。発行・保存は `scripts/setup_zoho_connection.sh`（手順は docs/zoho-connection.md）。
 
 ## 3. 処理の流れ
 
