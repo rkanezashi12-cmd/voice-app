@@ -62,7 +62,8 @@ cd ~/voice-app && bash scripts/rotate_api_key.sh
 
 1. 商談記録を1件作る：商談記録名「【TEST】録音URLの確認」、取得方法「対面録音」（開始日時は任意）
 2. 設定 →「開発者向け機能」→「関数」→「録音用URLを発行」のログ（実行ログ）を開く。
-   最後に `===== SUCCESS crm_updated=false` と出ていれば成功（`DRY_RUN` なので false が正しい）
+   最後に `===== SUCCESS crm_updated=false` と出ていれば成功（`DRY_RUN` なので false が正しい）。
+   `DRY_RUN=false` では `crm_updated=true` になり、商談記録の「録音用URL」に URL が入る
 3. バックエンド側でも確かめるとき（Cloud Shell）:
 
    ```bash

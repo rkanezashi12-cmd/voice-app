@@ -20,7 +20,8 @@
 
 - H1 `gemini-3.5-flash` は asia-northeast1 のリージョナル エンドポイントで従量課金のまま使える
   （`scripts/setup_processing.sh` の問い合わせで HTTP 200。1〜2分の録音の文字起こし〔音声〕・補正・要約が通った）。
-  補正（correct）は 478 文字で約100秒かかった。長い録音での所要時間は次の確認で見る
+  補正（correct）は 478 文字で1回目は約100秒、2回目（DRY_RUN=false で同じ音声）は約9秒で、処理全体は約35秒。
+  長い録音での所要時間は次の確認で見る
 
 ## CRM の自動作成（scripts/crm_setup.py）
 
@@ -63,10 +64,15 @@
 | M4 | Zoho の upsert の応答 | `data[0].action` が `insert` / `update` | `app/services/crm.py` |
 | M5 | Zoho の複数行（大）の文字数の数え方 | UTF-16 の単位で 32,000 以内に収める（多めに数える側） | `app/pipeline/formatting.py` |
 | M6 | Zoho でレコードが無いときの応答 | `GET /crm/v8/{module}/{id}` が 204 | `app/services/crm.py` |
-| M7 | Gemini の `response_json_schema`（JSON Schema）と `null` を含む型 `["string", "null"]` | そのまま渡す | `prompts/schema.json` |
-| M8 | Gemini に MP3 をインライン（`Part.from_bytes`）で渡せる大きさ | 20 分 × 32kbps ≒ 5MB | `app/services/audio.py` |
+| M8 | Gemini に MP3 をインライン（`Part.from_bytes`）で渡せる大きさ | 20 分 × 32kbps ≒ 5MB（1〜2分は通った） | `app/services/audio.py` |
 | M9 | Cloud Tasks のタスク名による重複排除が効く期間 | 同じ名前は一定期間登録できない（期間は要確認）。処理済みのレコードは共通処理側でも止める | `app/services/tasks.py` |
-| M10 | 署名付き URL の署名（鍵ファイルなし） | `generate_signed_url(service_account_email=..., access_token=...)` で IAM signBlob | `app/services/storage.py` |
+
+確認済み（2026-09-30 日本時間、本番の Cloud Run で `DRY_RUN=false` にして商談記録に書き込み。docs/processing-test.md の記録）：
+
+- M7 `response_json_schema` に `null` を含む型 `["string", "null"]` のスキーマを渡すと受け付けられ、JSON で返る
+  （`prompts/schema.json` のまま。要約・構造化項目を商談記録に書き込めた）
+- M10 鍵ファイルなしの署名付き URL（`generate_signed_url(service_account_email=..., access_token=...)` で IAM signBlob）で、
+  録音ページから GCS に直接アップロードできる
 
 ## 実機テストで確かめるもの（docs/recorder-test.md）
 
