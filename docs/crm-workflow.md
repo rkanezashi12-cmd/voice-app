@@ -8,14 +8,22 @@
 - 関数は CRM に書き込まない（書き込みはバックエンドだけが行う）
 - 画面の名前は多少違うことがある。見つからないときは画面を送る
 
-## 1. バックエンドの URL と API キーを確かめる（Cloud Shell）
+## 1. バックエンドの URL と API キーを用意する（Cloud Shell）
+
+URL（変数 `meeting_notes_url` に入れる）:
 
 ```bash
 gcloud run services describe meeting-notes --project=voice-ai-510014 --region=asia-northeast1 --format='value(status.url)'
-gcloud secrets versions access latest --secret=backend-api-key --project=voice-ai-510014; echo
 ```
 
-1行目が URL、2行目が API キー。**API キーは手順2で CRM に貼ったら `clear` で画面から消す**（スクリーンショットに写さない）。
+API キー（変数 `meeting_notes_api_key` に入れる）は、新しく作って1度だけ表示する:
+
+```bash
+cd ~/voice-app && bash scripts/rotate_api_key.sh
+```
+
+画面を消してからキーだけを表示し、Enter で画面から消す。**表示中の画面はスクリーンショットしない。**
+実行するたびにキーが新しくなり、古いキーは使えなくなる（そのときは CRM の変数も貼り直す）。
 
 ## 2. CRM に変数を2つ作る
 
@@ -73,6 +81,6 @@ gcloud secrets versions access latest --secret=backend-api-key --project=voice-a
 | 関数のログに何も出ない | ワークフローが動いていない。実行のタイミングと条件（取得方法・録音用URL）を確かめる |
 | `rec_id が空です` | 手順4-5 の引数の割り当てが無い |
 | `変数 … が未設定です` | 手順2 の API 名の誤り |
-| `応答コード=401` | API キーの誤り（手順1 の値を貼り直す） |
+| `応答コード=401` | API キーの誤り。`rotate_api_key.sh` で出した最新のキーを貼り直す |
 | `応答コード=422` | 送った値の形が合わない。ログの `応答=` の行を送る |
 | 関数の保存でエラー | 貼った範囲がずれている（1行目の `void …` と外側の `{ }` は貼らない）。直らなければエラー文を送る |
