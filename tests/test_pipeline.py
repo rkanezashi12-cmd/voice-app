@@ -43,7 +43,7 @@ async def test_bot_flow_updates_crm_once_and_deletes_media(
     crm.add(
         "Glossary",
         "g1",
-        {"Term": "マルサン木型", "Misrecognitions": "丸三木型、まるさん", "Term_Type": "社名"},
+        {"Name": "マルサン木型", "Misrecognitions": "丸三木型、まるさん", "Term_Type": "社名"},
     )
     recall.add_bot("bot-1", "5001", transcript=RECALL_TRANSCRIPT)
 

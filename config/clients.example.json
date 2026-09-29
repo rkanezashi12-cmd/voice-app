@@ -23,7 +23,7 @@
         "join_lead_seconds": 60
       },
       "field_map": {
-        "meeting_record": {"module": "Meeting_Records"},
+        "meeting_record": {"module": "MeetingRecords"},
         "category_choices": []
       }
     }

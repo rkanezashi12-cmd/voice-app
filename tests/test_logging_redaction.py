@@ -58,7 +58,7 @@ async def test_dry_run_pipeline_writes_nothing_and_logs_no_content(
         "Status": "予約済",
         "Start_At": "2026-09-28T10:00:00+09:00",
     }
-    respx_mock.get(f"{ZOHO}/Meeting_Records/5001").mock(
+    respx_mock.get(f"{ZOHO}/MeetingRecords/5001").mock(
         return_value=httpx.Response(200, json={"data": [record]})
     )
     respx_mock.get(url__startswith=f"{ZOHO}/Glossary").mock(return_value=httpx.Response(204))

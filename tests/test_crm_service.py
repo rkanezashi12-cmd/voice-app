@@ -48,11 +48,11 @@ def success(record_id: str = "111", action: str | None = None) -> httpx.Response
 
 async def test_update_sends_put_without_triggering_workflows(respx_mock: respx.MockRouter) -> None:
     token = token_route(respx_mock)
-    put = respx_mock.put(f"{US_API}/Meeting_Records/111").mock(return_value=success())
+    put = respx_mock.put(f"{US_API}/MeetingRecords/111").mock(return_value=success())
     async with httpx.AsyncClient() as http:
         crm = make_crm(http)
-        await crm.update_record("Meeting_Records", "111", {"Status": "完了"})
-        await crm.update_record("Meeting_Records", "111", {"Status": "完了"})
+        await crm.update_record("MeetingRecords", "111", {"Status": "完了"})
+        await crm.update_record("MeetingRecords", "111", {"Status": "完了"})
     assert token.call_count == 1, "アクセストークンはキャッシュして使い回す"
     request = put.calls[0].request
     assert request.headers["Authorization"] == "Zoho-oauthtoken at-1"
@@ -97,8 +97,8 @@ async def test_dry_run_sends_no_writes(
     async with httpx.AsyncClient() as http:
         crm = make_crm(http, dry_run=True)
         with caplog.at_level(logging.INFO):
-            await crm.update_record("Meeting_Records", "111", {"Status": "完了", "Summary": "秘密の要約"})
-            assert await crm.create_record("Meeting_Records", {"Name": "x"}) == "dry-run"
+            await crm.update_record("MeetingRecords", "111", {"Status": "完了", "Summary": "秘密の要約"})
+            assert await crm.create_record("MeetingRecords", {"Name": "x"}) == "dry-run"
             assert await crm.upsert_record("Glossary", {"Name": "x"}, ["Name"]) == ("dry-run", "insert")
     assert len(respx_mock.calls) == 0
     skipped = [r for r in caplog.records if r.getMessage() == "dry_run.skip"]
@@ -109,11 +109,11 @@ async def test_dry_run_sends_no_writes(
 
 async def test_created_records_get_test_prefix(respx_mock: respx.MockRouter) -> None:
     token_route(respx_mock)
-    post = respx_mock.post(f"{US_API}/Meeting_Records/upsert").mock(return_value=success("222", "insert"))
+    post = respx_mock.post(f"{US_API}/MeetingRecords/upsert").mock(return_value=success("222", "insert"))
     async with httpx.AsyncClient() as http:
         crm = make_crm(http)
         record_id, action = await crm.upsert_record(
-            "Meeting_Records", {"Name": "2026-09-28 オンライン商談", "Recall_ID": "u1"}, ["Recall_ID"]
+            "MeetingRecords", {"Name": "2026-09-28 オンライン商談", "Recall_ID": "u1"}, ["Recall_ID"]
         )
     assert (record_id, action) == ("222", "insert")
     body = json.loads(post.calls[0].request.content)
@@ -124,23 +124,23 @@ async def test_created_records_get_test_prefix(respx_mock: respx.MockRouter) -> 
 
 async def test_no_prefix_when_test_records_disabled(respx_mock: respx.MockRouter) -> None:
     token_route(respx_mock)
-    post = respx_mock.post(f"{US_API}/Meeting_Records").mock(return_value=success("333"))
+    post = respx_mock.post(f"{US_API}/MeetingRecords").mock(return_value=success("333"))
     async with httpx.AsyncClient() as http:
         crm = make_crm(http, test_records=False)
-        await crm.create_record("Meeting_Records", {"Name": "本番の記録"})
+        await crm.create_record("MeetingRecords", {"Name": "本番の記録"})
     assert json.loads(post.calls[0].request.content)["data"][0]["Name"] == "本番の記録"
 
 
 async def test_refreshes_token_once_on_401(respx_mock: respx.MockRouter) -> None:
     token = token_route(respx_mock)
-    get = respx_mock.get(f"{US_API}/Meeting_Records/111").mock(
+    get = respx_mock.get(f"{US_API}/MeetingRecords/111").mock(
         side_effect=[
             httpx.Response(401, json={"code": "INVALID_TOKEN"}),
             httpx.Response(200, json={"data": [{"id": "111"}]}),
         ]
     )
     async with httpx.AsyncClient() as http:
-        record = await make_crm(http).get_record("Meeting_Records", "111")
+        record = await make_crm(http).get_record("MeetingRecords", "111")
     assert record == {"id": "111"}
     assert token.call_count == 2
     assert get.call_count == 2
@@ -148,7 +148,7 @@ async def test_refreshes_token_once_on_401(respx_mock: respx.MockRouter) -> None
 
 async def test_error_response_becomes_exception(respx_mock: respx.MockRouter) -> None:
     token_route(respx_mock)
-    respx_mock.put(f"{US_API}/Meeting_Records/111").mock(
+    respx_mock.put(f"{US_API}/MeetingRecords/111").mock(
         return_value=httpx.Response(
             400,
             json={
@@ -165,7 +165,7 @@ async def test_error_response_becomes_exception(respx_mock: respx.MockRouter) ->
     )
     async with httpx.AsyncClient() as http:
         with pytest.raises(ExternalServiceError) as err:
-            await make_crm(http).update_record("Meeting_Records", "111", {"Status": "x"})
+            await make_crm(http).update_record("MeetingRecords", "111", {"Status": "x"})
     assert err.value.code == "INVALID_DATA"
     assert "Status" in err.value.message
     assert err.value.retryable is False
@@ -173,28 +173,28 @@ async def test_error_response_becomes_exception(respx_mock: respx.MockRouter) ->
 
 async def test_retries_server_errors(respx_mock: respx.MockRouter) -> None:
     token_route(respx_mock)
-    put = respx_mock.put(f"{US_API}/Meeting_Records/111").mock(side_effect=[httpx.Response(503), success()])
+    put = respx_mock.put(f"{US_API}/MeetingRecords/111").mock(side_effect=[httpx.Response(503), success()])
     async with httpx.AsyncClient() as http:
-        await make_crm(http).update_record("Meeting_Records", "111", {"Status": "完了"})
+        await make_crm(http).update_record("MeetingRecords", "111", {"Status": "完了"})
     assert put.call_count == 2
 
 
 async def test_does_not_retry_client_errors(respx_mock: respx.MockRouter) -> None:
     token_route(respx_mock)
-    put = respx_mock.put(f"{US_API}/Meeting_Records/111").mock(return_value=httpx.Response(400, json={}))
+    put = respx_mock.put(f"{US_API}/MeetingRecords/111").mock(return_value=httpx.Response(400, json={}))
     async with httpx.AsyncClient() as http:
         with pytest.raises(ExternalServiceError):
-            await make_crm(http).update_record("Meeting_Records", "111", {"Status": "完了"})
+            await make_crm(http).update_record("MeetingRecords", "111", {"Status": "完了"})
     assert put.call_count == 1
 
 
 async def test_jp_data_center_can_be_selected(respx_mock: respx.MockRouter) -> None:
     token = token_route(respx_mock, "https://accounts.zoho.jp/oauth/v2/token")
-    get = respx_mock.get("https://www.zohoapis.jp/crm/v8/Meeting_Records/1").mock(
+    get = respx_mock.get("https://www.zohoapis.jp/crm/v8/MeetingRecords/1").mock(
         return_value=httpx.Response(204)
     )
     async with httpx.AsyncClient() as http:
-        assert await make_crm(http, dc="jp").get_record("Meeting_Records", "1") is None
+        assert await make_crm(http, dc="jp").get_record("MeetingRecords", "1") is None
     assert token.called and get.called
 
 
@@ -211,6 +211,6 @@ async def test_coql_and_list(respx_mock: respx.MockRouter) -> None:
     )
     async with httpx.AsyncClient() as http:
         crm = make_crm(http)
-        assert await crm.coql("select id from Meeting_Records where Recall_ID = 'x' limit 1") == [{"id": "1"}]
+        assert await crm.coql("select id from MeetingRecords where Recall_ID = 'x' limit 1") == [{"id": "1"}]
         assert [r["Term"] for r in await crm.list_records("Glossary", ["Term"])] == ["A", "B"]
     assert json.loads(coql.calls[0].request.content)["select_query"].startswith("select id")

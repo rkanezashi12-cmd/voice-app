@@ -21,7 +21,7 @@ class _Frozen(BaseModel):
 class MeetingRecordFields(_Frozen):
     """カスタムモジュール「商談記録」。"""
 
-    module: str = "Meeting_Records"
+    module: str = "MeetingRecords"
     name: str = "Name"  # レコード名（作成時に必須）
     meeting_type: str = "Meeting_Type"
     capture_method: str = "Capture_Method"
@@ -55,7 +55,7 @@ class GlossaryFields(_Frozen):
     """カスタムモジュール「用語辞書」。"""
 
     module: str = "Glossary"
-    term: str = "Term"
+    term: str = "Name"  # 標準のレコード名項目（表示名を「用語」に変える）
     misrecognitions: str = "Misrecognitions"
     term_type: str = "Term_Type"
 
