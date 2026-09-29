@@ -259,6 +259,23 @@ it("マイクが止まったら警告を出し、再開で同じ記録に別区�
   await page.close();
 });
 
+it("録音終了の処理中に健全性チェックが走っても「録音が止まりました」を出さない", async ({ context, server }) => {
+  const page = await openPage(context, server.origin, "rec-finish-race");
+  await page.click("#btn-start");
+  await waitFor(() => server.uploads.size >= 1);
+  // 実機（iPhone Chrome）では、終了処理でマイクを止めた直後の健全性チェックが中断と誤判定した
+  await page.evaluate(() => setInterval(() => window.__recorderDebug.healthCheck(), 1));
+  await page.click("#btn-finish");
+  await waitFor(() => server.completes.length === 1);
+  await page.waitForSelector("#view-done:not([hidden])");
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(await page.isVisible("#overlay"), false, "完了後に警告画面が出ている");
+  assert.equal((await snapshot(page)).phase, "done");
+  await waitFor(() => server.events.some((e) => e.type === "completed"), { message: "completed が届かない" });
+  assert.ok(!server.events.some((e) => e.type === "interrupted"), "終了処理を中断と記録している");
+  await page.close();
+});
+
 it("送信に失敗しても再送し、最終的に全部届く", async ({ context, server }) => {
   server.failPuts = 3;
   const page = await openPage(context, server.origin, "rec-retry");

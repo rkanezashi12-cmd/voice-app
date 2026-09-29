@@ -289,6 +289,7 @@ async function startRecordingInner(isResume) {
     return;
   }
   state.stream = stream;
+  state.mutedSince = null;
   const track = stream.getAudioTracks()[0];
   if (track) {
     const s = track.getSettings ? track.getSettings() : {};
@@ -305,6 +306,11 @@ async function startRecordingInner(isResume) {
       log("track_unmute", { muted_ms: state.mutedSince ? Date.now() - state.mutedSince : null });
       state.mutedSince = null;
     });
+    // 通話中に再開すると、最初からミュートされた状態でマイクが渡される（mute イベントが来ないこともある）
+    if (track.muted && !state.mutedSince) {
+      state.mutedSince = Date.now();
+      log("track_muted_at_start");
+    }
   }
 
   const { mode, chunkSeconds } = state.settings;
@@ -341,7 +347,6 @@ async function startRecordingInner(isResume) {
   state.sessionStartedAt = Date.now();
   state.firstStartedAt = state.firstStartedAt ?? state.sessionStartedAt;
   state.unhealthyCount = 0;
-  state.mutedSince = null;
   log(isResume ? "resume" : "start", { mode, chunk_seconds: chunkSeconds, mime: state.mimeType || "default" });
 
   startLevelMonitor(stream);
@@ -490,11 +495,15 @@ async function releaseWakeLock() {
 // ---- 終了と送信 ----
 
 async function finish() {
+  if (state.phase === "finishing" || state.phase === "done") return;
   if (state.phase === "recording" && !window.confirm("録音を終了して送信しますか？")) return;
   log("finish_requested", { phase: state.phase });
+  const wasRecording = state.phase === "recording";
+  // 先に状態を変えておく。マイクを止めたことを健全性チェックが「停止」と誤判定して警告を出さないように
+  state.phase = "finishing";
   state.alarm.stop();
   show("overlay", false);
-  if (state.phase === "recording") {
+  if (wasRecording) {
     stopMonitors();
     await state.recorder.stop();
     closeSession();
@@ -547,6 +556,8 @@ async function drainAndComplete(allowMissing) {
     for (const item of await state.store.list()) await state.store.delete(item.key);
     await persistMeta({ completed: true });
     state.phase = "done";
+    state.alarm.stop();
+    show("overlay", false);
     if (state.test) {
       $("done-message").textContent = "テスト録音の送信が完了しました。下の「診断結果をコピー」で結果を記録表に貼ってください。";
     }
@@ -657,6 +668,7 @@ function setupTestPanel() {
       mimeType: state.mimeType,
     }),
     summary: currentSummary,
+    healthCheck: () => healthCheck(),
   };
 }
 
