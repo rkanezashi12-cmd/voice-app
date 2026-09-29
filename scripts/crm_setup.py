@@ -16,6 +16,7 @@
     python3 scripts/crm_setup.py apply                        # 実際に作る
     python3 scripts/crm_setup.py show-fields                  # 作った項目の実物の設定を表示する（書き込みなし）
     python3 scripts/crm_setup.py check-access                 # バックエンドに要る権限（スコープ）がそろっているか試す（読み取りのみ）
+    python3 scripts/crm_setup.py diagnose <商談記録の ID>     # 組織・ユーザーと、商談記録の読み取りを試した結果を出す（読み取りのみ）
 
 必要な環境変数:
     ZOHO_DC               com / jp / eu / in / com.au / ca（マルサン木型は com）
@@ -500,6 +501,68 @@ def check_access(api: Any) -> list[tuple[bool, str, str, str]]:
     return results
 
 
+def diagnose(api: Any, record_id: str) -> list[str]:
+    """接続先の組織・ユーザーと、商談記録の読み取りを数通り試した結果（成否とエラーコード）。
+
+    レコードの中身は出さない。バックエンドだけが失敗するときの切り分けに使う。
+    """
+    if not record_id.isdigit():
+        raise SetupError("商談記録の ID は数字で指定してください")
+    lines: list[str] = []
+
+    def probe(
+        label: str, method: str, path: str, params: dict[str, str] | None = None, body: Any = None
+    ) -> Any:
+        try:
+            resp = api.request(method, path, params, body)
+        except SetupError as e:
+            m = re.search(r"（HTTP (\d+)）: (.*)$", str(e), re.S)
+            lines.append(f"NG  {label}: HTTP {m.group(1)} {m.group(2)[:300]}" if m else f"NG  {label}: {e}")
+            return None
+        lines.append(f"OK  {label}")
+        return resp if resp is not None else {}
+
+    org = probe("組織（GET /org）", "GET", "/crm/v8/org")
+    if org:
+        o = (org.get("org") or [{}])[0]
+        lines.append(f"      {o.get('company_name')}（{o.get('domain_name')} / {o.get('id')}）")
+    me = probe("ユーザー（GET /users?type=CurrentUser）", "GET", "/crm/v8/users", {"type": "CurrentUser"})
+    if me:
+        u = (me.get("users") or [{}])[0]
+        profile = (u.get("profile") or {}).get("name")
+        lines.append(f"      {u.get('full_name')} / {u.get('email')} / プロファイル {profile}")
+    mod = probe(
+        "モジュールの設定（GET /settings/modules/MeetingRecords）",
+        "GET",
+        "/crm/v8/settings/modules/MeetingRecords",
+    )
+    if mod:
+        m = (mod.get("modules") or [{}])[0]
+        lines.append(
+            f"      api_name={m.get('api_name')} generated_type={m.get('generated_type')} "
+            f"api_supported={m.get('api_supported')} id={m.get('id')}"
+        )
+    count = probe("件数（GET /MeetingRecords/actions/count）", "GET", "/crm/v8/MeetingRecords/actions/count")
+    if count:
+        lines.append(f"      {count.get('count')} 件")
+    rows = probe(
+        "COQL（select id from MeetingRecords where id = …）",
+        "POST",
+        "/crm/v8/coql",
+        body={"select_query": f"select id from MeetingRecords where id = '{record_id}'"},  # noqa: S608 数字だけ（上で確かめている）
+    )
+    if rows is not None:
+        lines.append(f"      {len(rows.get('data') or [])} 件ヒット")
+    probe(f"レコードの取得（GET /MeetingRecords/{record_id}）", "GET", f"/crm/v8/MeetingRecords/{record_id}")
+    probe(
+        f"レコードの取得・項目指定（GET /MeetingRecords/{record_id}?fields=Name）",
+        "GET",
+        f"/crm/v8/MeetingRecords/{record_id}",
+        {"fields": "Name"},
+    )
+    return lines
+
+
 # ---- 入口 ----
 
 
@@ -548,6 +611,7 @@ def main(argv: list[str]) -> int:
         "apply",
         "show-fields",
         "check-access",
+        "diagnose",
     }:
         print(__doc__)
         return 2
@@ -560,6 +624,11 @@ def main(argv: list[str]) -> int:
             return 0
         log = Logger()
         api = Zoho(dc(), env("ZOHO_CLIENT_ID"), env("ZOHO_CLIENT_SECRET"), env("ZOHO_REFRESH_TOKEN"), log)
+        if command == "diagnose":
+            if len(argv) != 3 or not argv[2].isdigit():
+                raise SetupError("使い方: diagnose <商談記録の ID（数字）>")
+            print("\n".join(diagnose(api, argv[2])))
+            return 0
         org = (api.request("GET", "/crm/v8/org") or {}).get("org", [{}])[0]
         if command == "show-org":
             for key in ("company_name", "domain_name", "id", "time_zone", "currency", "type"):
