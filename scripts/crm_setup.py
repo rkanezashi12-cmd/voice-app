@@ -14,12 +14,13 @@
     python3 scripts/crm_setup.py show-org                     # 接続先の組織を表示する（書き込みなし）
     python3 scripts/crm_setup.py plan                         # 作るものを表示する（書き込みなし）
     python3 scripts/crm_setup.py apply                        # 実際に作る
+    python3 scripts/crm_setup.py show-fields                  # 作った項目の実物の設定を表示する（書き込みなし）
 
 必要な環境変数:
     ZOHO_DC               com / jp / eu / in / com.au / ca（マルサン木型は com）
     ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET   Self Client の値
     ZOHO_REFRESH_TOKEN    exchange-code で得た値（exchange-code 以外で必要）
-    EXPECTED_ORG_ID / EXPECTED_ORG_DOMAIN / EXPECTED_COMPANY_NAME   show-org で確かめた値（plan / apply で必要）
+    EXPECTED_ORG_ID / EXPECTED_ORG_DOMAIN / EXPECTED_COMPANY_NAME   show-org で確かめた値（plan / apply / show-fields で必要）
 """
 
 from __future__ import annotations
@@ -128,7 +129,8 @@ SPEC: list[ModuleSpec] = [
             simple("会議URL", "Meeting_URL", "website"),
             simple("録音用URL", "Recording_URL", "website"),
             # デスクトップ方式の upsert キー。重複を許さない
-            text("Recall ID", "Recall_ID", unique={"case_sensitive": True}),
+            # （Zoho が受け付けるのは case_sensitive: false だけ。true は INVALID_DATA）
+            text("Recall ID", "Recall_ID", unique={"case_sensitive": False}),
             textarea("エラー内容", "Error_Message", "small"),
             textarea("要約", "Summary", "large"),
             textarea("課題", "Issues", "large"),
@@ -339,35 +341,51 @@ def describe(plan: Plan) -> str:
     return "\n".join(lines)
 
 
+def failures(resp: Any, key: str, sent: list[dict[str, Any]]) -> list[str]:
+    """行ごとの失敗を説明する文字列の一覧（空なら全件成功）。
+
+    Zoho は一部だけ失敗すると HTTP 207 を返し、失敗した行の status を "error" にする（送った順に並ぶ）。
+    """
+    rows = resp.get(key) if isinstance(resp, dict) else None
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for i, row in enumerate(rows):
+        if isinstance(row, dict) and row.get("status") == "error":
+            name = sent[i].get("api_name") if i < len(sent) else f"{i + 1}件目"
+            details = json.dumps(row.get("details"), ensure_ascii=False)
+            out.append(f"{name}: {row.get('code')} {row.get('message')} {details}")
+    return out
+
+
 def apply(api: Any, plan: Plan) -> None:
     if plan.create_modules:
         profiles = (api.request("GET", "/crm/v8/settings/profiles") or {}).get("profiles", [])
         if not profiles:
             raise SetupError("プロファイルを取得できません")
         for ms in plan.create_modules:
-            api.request(
-                "POST",
-                "/crm/v8/settings/modules",
-                body={
-                    "modules": [
-                        {
-                            "plural_label": ms.label,
-                            "singular_label": ms.label,
-                            "api_name": ms.api_name,
-                            "profiles": [{"id": p["id"]} for p in profiles],
-                            "display_field": {"field_label": ms.display_field_label, "data_type": "text"},
-                        }
-                    ]
-                },
-            )
+            module_body = {
+                "plural_label": ms.label,
+                "singular_label": ms.label,
+                "api_name": ms.api_name,
+                "profiles": [{"id": p["id"]} for p in profiles],
+                "display_field": {"field_label": ms.display_field_label, "data_type": "text"},
+            }
+            resp = api.request("POST", "/crm/v8/settings/modules", body={"modules": [module_body]})
+            failed = failures(resp, "modules", [module_body])
+            if failed:
+                raise SetupError(f"モジュール {ms.api_name} を作成できませんでした: {' / '.join(failed)}")
             print(f"作成しました: モジュール {ms.api_name}")
     for module, fields in plan.create_fields.items():
         for i in range(0, len(fields), FIELDS_PER_REQUEST):
             batch = fields[i : i + FIELDS_PER_REQUEST]
             try:
-                api.request("POST", "/crm/v8/settings/fields", {"module": module}, {"fields": batch})
+                resp = api.request("POST", "/crm/v8/settings/fields", {"module": module}, {"fields": batch})
+                failed = failures(resp, "fields", batch)
+                if failed:
+                    raise SetupError(f"{module} の項目の一部を作成できませんでした: {' / '.join(failed)}")
             except SetupError:
-                # 400 でも一部は作成されていることがある。現物を確かめてから止める
+                # 400 や一部失敗（207）でも、同じ回の他の項目は作成されていることがある。現物を確かめてから止める
                 current = (api.request("GET", "/crm/v8/settings/fields", {"module": module}) or {}).get(
                     "fields", []
                 )
@@ -386,8 +404,13 @@ def verify(api: Any, spec: list[ModuleSpec]) -> list[str]:
         )
         by_field = {f.get("api_name"): f for f in current}
         for fs in ms.fields:
-            if fs["api_name"] not in by_field:
+            found = by_field.get(fs["api_name"])
+            if found is None:
                 problems.append(f"{ms.api_name}.{fs['api_name']} がありません")
+            elif found.get("data_type") != fs["data_type"]:
+                problems.append(
+                    f"{ms.api_name}.{fs['api_name']} の種類が {found.get('data_type')}（想定 {fs['data_type']}）"
+                )
         name = by_field.get("Name")
         if name is None or name.get("field_label") != ms.display_field_label:
             actual = [f.get("api_name") for f in current if f.get("field_label") == ms.display_field_label]
@@ -395,6 +418,33 @@ def verify(api: Any, spec: list[ModuleSpec]) -> list[str]:
                 f"{ms.api_name} の表示名の項目「{ms.display_field_label}」の API 名が Name ではありません（実際: {actual}）"
             )
     return problems
+
+
+def field_details(api: Any, spec: list[ModuleSpec]) -> list[str]:
+    """作った項目の実物の設定（種類・文字数・複数行の大きさ・重複不可・参照先）を1項目1行で返す。"""
+    lines = []
+    for ms in spec:
+        current = (api.request("GET", "/crm/v8/settings/fields", {"module": ms.api_name}) or {}).get(
+            "fields", []
+        )
+        by_field = {f.get("api_name"): f for f in current}
+        for api_name in ["Name", *(fs["api_name"] for fs in ms.fields)]:
+            f = by_field.get(api_name)
+            if f is None:
+                lines.append(f"{ms.api_name}.{api_name}: ありません")
+                continue
+            extras = [
+                f"{key}={json.dumps(f[key], ensure_ascii=False)}"
+                for key in ("length", "textarea", "unique")
+                if f.get(key)
+            ]
+            target = ((f.get("lookup") or {}).get("module") or {}).get("api_name")
+            if target:
+                extras.append(f"参照先={target}")
+            lines.append(
+                " ".join([f"{ms.api_name}.{api_name}「{f.get('field_label')}」{f.get('data_type')}", *extras])
+            )
+    return lines
 
 
 # ---- 入口 ----
@@ -438,7 +488,7 @@ def exchange_code(code: str) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2 or argv[1] not in {"exchange-code", "show-org", "plan", "apply"}:
+    if len(argv) < 2 or argv[1] not in {"exchange-code", "show-org", "plan", "apply", "show-fields"}:
         print(__doc__)
         return 2
     command = argv[1]
@@ -468,6 +518,9 @@ def main(argv: list[str]) -> int:
             },
         )
         print(f"接続先: {org.get('company_name')}（{org.get('domain_name')} / {org.get('id')}）\n")
+        if command == "show-fields":
+            print("\n".join(field_details(api, SPEC)))
+            return 0
         plan = build_plan(api, SPEC)
         print(describe(plan))
         if command == "plan":
@@ -486,7 +539,9 @@ def main(argv: list[str]) -> int:
             print("\n".join(f"- {p}" for p in problems))
             return 1
         print("\n完了しました。すべての項目が API 名どおりに作成されています。")
-        print(f"通信の記録: {log.path}")
+        print("\n作成した項目の設定:")
+        print("\n".join(field_details(api, SPEC)))
+        print(f"\n通信の記録: {log.path}")
         return 0
     except SetupError as e:
         print(f"エラー: {e}", file=sys.stderr)

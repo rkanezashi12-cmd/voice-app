@@ -18,9 +18,16 @@ _spec.loader.exec_module(cs)
 
 
 class FakeApi:
-    def __init__(self, modules: list[dict[str, Any]], fields: dict[str, list[dict[str, Any]]]) -> None:
+    def __init__(
+        self,
+        modules: list[dict[str, Any]],
+        fields: dict[str, list[dict[str, Any]]],
+        reject: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         self.modules = modules
         self.fields = fields
+        # api_name → Zoho が返す失敗の行。一部だけ失敗したときの応答（HTTP 207）を再現する
+        self.reject = reject or {}
         self.calls: list[tuple[str, str, Any]] = []
 
     def request(self, method: str, path: str, params: dict | None = None, body: Any = None) -> Any:
@@ -39,10 +46,16 @@ class FakeApi:
             self.fields[m["api_name"]] = [
                 {"api_name": "Name", "field_label": m["display_field"]["field_label"], "data_type": "text"}
             ]
-            return {}
+            return {"modules": [{"code": "SUCCESS", "status": "success"}]}
         if method == "POST" and path == "/crm/v8/settings/fields":
-            self.fields[params["module"]] += [dict(f) for f in body["fields"]]
-            return {}
+            rows = []
+            for f in body["fields"]:
+                if f["api_name"] in self.reject:
+                    rows.append(self.reject[f["api_name"]])
+                else:
+                    self.fields[params["module"]].append(dict(f))
+                    rows.append({"code": "SUCCESS", "status": "success", "message": "field created"})
+            return {"fields": rows}
         raise AssertionError(f"想定外の呼び出し {method} {path}")
 
 
@@ -130,3 +143,66 @@ def test_lookup_fields_have_display_label() -> None:
         for f in m.fields:
             if f["data_type"] == "lookup":
                 assert f["lookup"]["display_label"]
+
+
+# 実機で返った応答（unique.case_sensitive に true を送ったとき。同じ回の他の4項目は作成された）
+CASE_SENSITIVE_REJECTED = {
+    "code": "INVALID_DATA",
+    "status": "error",
+    "message": "Invalid value.",
+    "details": {
+        "api_name": "case_sensitive",
+        "json_path": "$.fields[4].unique.case_sensitive",
+        "supported_values": [False],
+    },
+}
+
+
+def test_recall_id_is_unique_without_case_sensitivity() -> None:
+    """Zoho が受け付けるのは case_sensitive: false だけ（true は INVALID_DATA）。"""
+    recall = next(f for m in cs.SPEC for f in m.fields if f["api_name"] == "Recall_ID")
+    assert recall["unique"] == {"case_sensitive": False}
+
+
+def test_partial_failure_stops_and_names_the_failed_field() -> None:
+    """一部だけ失敗した応答を成功扱いにせず、失敗した項目名を出して止まる。再実行で足りない分だけ作る。"""
+    api = FakeApi(list(STANDARD), {}, reject={"Recall_ID": CASE_SENSITIVE_REJECTED})
+    with pytest.raises(cs.SetupError, match="Recall_ID: INVALID_DATA"):
+        cs.apply(api, cs.build_plan(api, cs.SPEC))
+    posted = [
+        f["api_name"]
+        for method, path, body in api.calls
+        if method == "POST" and path == "/crm/v8/settings/fields"
+        for f in body["fields"]
+    ]
+    assert posted[-1] == "Recall_ID"  # 失敗した回で止まり、後ろの項目は送らない
+    assert "Contact_Name" in {f["api_name"] for f in api.fields["MeetingRecords"]}
+
+    api.reject = {}
+    again = cs.build_plan(api, cs.SPEC)
+    assert again.create_modules == []
+    assert again.create_fields["MeetingRecords"][0]["api_name"] == "Recall_ID"
+    assert "Contact_Name" not in {f["api_name"] for f in again.create_fields["MeetingRecords"]}
+    cs.apply(api, again)
+    assert cs.verify(api, cs.SPEC) == []
+
+
+def test_verify_reports_type_mismatch() -> None:
+    api = FakeApi(list(STANDARD), {})
+    cs.apply(api, cs.build_plan(api, cs.SPEC))
+    summary = next(f for f in api.fields["MeetingRecords"] if f["api_name"] == "Summary")
+    summary["data_type"] = "text"
+    assert cs.verify(api, cs.SPEC) == ["MeetingRecords.Summary の種類が text（想定 textarea）"]
+
+
+def test_field_details_show_actual_settings() -> None:
+    api = FakeApi(list(STANDARD), {})
+    cs.apply(api, cs.build_plan(api, cs.SPEC))
+    lines = cs.field_details(api, cs.SPEC)
+    assert len(lines) == sum(len(m.fields) + 1 for m in cs.SPEC)
+    assert "MeetingRecords.Name「商談記録名」text" in lines
+    assert 'MeetingRecords.Recall_ID「Recall ID」text length=255 unique={"case_sensitive": false}' in lines
+    assert (
+        'MeetingRecords.Transcript「文字起こし全文」textarea length=32000 textarea={"type": "large"}' in lines
+    )
+    assert "MeetingRecords.Account「取引先」lookup 参照先=Accounts" in lines

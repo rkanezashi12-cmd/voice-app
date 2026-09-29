@@ -23,10 +23,16 @@
 
 | # | 項目 | 実装での想定 |
 |---|---|---|
-| Z1 | モジュール作成時の `display_field` の項目の API 名 | `Name` になる（違えば verify が報告する） |
-| Z2 | 複数行（大）の作り方 | `{"data_type": "textarea", "length": 32000, "textarea": {"type": "large"}}` |
-| Z3 | 重複を許さない項目 | `{"unique": {"case_sensitive": true}}` |
-| Z4 | URL 項目の型名 | `data_type: "website"` |
+| Z2 | 複数行（大）の作り方 | `{"data_type": "textarea", "length": 32000, "textarea": {"type": "large"}}`（作成は通った。文字数・大きさが反映されたかは `show-fields` で確認） |
+| Z4 | URL 項目の型名 | `data_type: "website"`（作成は通った。型名は verify と `show-fields` で確認） |
+
+確認済み（2026-09-29、マルサン木型の本番組織で apply を実行）：
+
+- Z1 モジュール作成時の `display_field` の項目の API 名は `Name`（表示名は `display_field.field_label`）
+- Z3 重複を許さない項目は `{"unique": {"case_sensitive": false}}`。`true` を送ると
+  `INVALID_DATA`（`supported_values: [false]`）
+- 項目作成で一部だけ失敗すると **HTTP 207** が返り、行ごとの `status` が `error` になる（同じ回の他の項目は作成される）。
+  HTTP ステータスだけでは失敗に気づけないので、行ごとの `status` を見る（`scripts/crm_setup.py` の `failures`）
 
 ## 優先度：中（動くが挙動が変わる）
 
