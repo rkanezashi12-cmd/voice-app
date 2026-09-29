@@ -1,0 +1,115 @@
+void automation.create_bot(String rec_id)
+{
+	// 入口A（ボット参加）: 商談記録の「会議URL」の会議に、Recall.ai の録音ボットを予約する（バックエンド経由）。
+	// ワークフロー「ボットの予約」から呼ぶ。引数 rec_id に「商談記録 Id」をマッピングすること
+	// （マッピングが無いと rec_id が空になり、何もせずに終わる。そのときはログに「rec_id が空」と出る）。
+	// 予約の結果（Recall ID と状態「予約済」、失敗したら状態「失敗」とエラー内容）はバックエンドが書き込む。
+	// この関数は CRM に書き込まない。会議URL はパスコードを含むことがあるので、ログには有無だけを出す。
+	// 手順は docs/recall-bot.md。
+	//
+	// ---- 設定（API 名はバックエンドの app/field_map.py と合わせる） ----
+	MR_MODULE = "MeetingRecords";
+	F_CAPTURE_METHOD = "Capture_Method";
+	F_MEETING_URL = "Meeting_URL";
+	F_START_AT = "Start_At";
+	F_RECALL_ID = "Recall_ID";
+	CAPTURE_BOT = "ボット";
+	// CRM の変数（設定 → 開発者向け機能 → 変数。録音用URLの発行と同じもの）
+	VAR_URL = "meeting_notes_url";
+	VAR_API_KEY = "meeting_notes_api_key";
+	//
+	info "===== create_bot START rec_id=" + ifnull(rec_id, "(空)") + " =====";
+	if(rec_id == null || rec_id.trim() == "")
+	{
+		info "[create_bot] 中止: rec_id が空です。ワークフローの引数のマッピング（rec_id = 商談記録 Id）を確認してください";
+		return;
+	}
+	// ---- STEP1 商談記録を読む ----
+	rec = zoho.crm.getRecordById(MR_MODULE, rec_id.trim().toLong());
+	if(rec == null)
+	{
+		info "[create_bot] 中止: 商談記録を取得できません（null）";
+		return;
+	}
+	if(rec.get("id") == null)
+	{
+		info "[create_bot] 中止: 商談記録を取得できません res=" + rec.toString();
+		return;
+	}
+	captureMethod = ifnull(rec.get(F_CAPTURE_METHOD), "").toString();
+	meetingUrl = ifnull(rec.get(F_MEETING_URL), "").toString().trim();
+	startAt = ifnull(rec.get(F_START_AT), "").toString().trim();
+	recallId = ifnull(rec.get(F_RECALL_ID), "").toString().trim();
+	urlState = "なし";
+	if(meetingUrl != "")
+	{
+		urlState = "あり";
+	}
+	info "[create_bot] STEP1 取得方法=" + captureMethod + " 会議URL=" + urlState + " 開始日時=" + startAt + " Recall ID=" + recallId;
+	if(captureMethod != CAPTURE_BOT)
+	{
+		info "[create_bot] 中止: 取得方法が「" + CAPTURE_BOT + "」ではありません（ワークフローの条件を確認）";
+		return;
+	}
+	if(meetingUrl == "")
+	{
+		info "[create_bot] 中止: 会議URL が空です";
+		return;
+	}
+	if(recallId != "")
+	{
+		info "[create_bot] 中止: ボットを予約済みです（Recall ID あり）。二重に予約しません";
+		return;
+	}
+	// ---- STEP2 バックエンドに予約を依頼する ----
+	baseUrl = ifnull(zoho.crm.getOrgVariable(VAR_URL), "").toString().trim();
+	apiKey = ifnull(zoho.crm.getOrgVariable(VAR_API_KEY), "").toString().trim();
+	if(baseUrl == "" || apiKey == "")
+	{
+		info "[create_bot] 中止: 変数 " + VAR_URL + " / " + VAR_API_KEY + " が未設定です";
+		return;
+	}
+	if(baseUrl.endsWith("/"))
+	{
+		baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+	}
+	payload = Map();
+	payload.put("record_id", rec_id.trim());
+	payload.put("meeting_url", meetingUrl);
+	if(startAt != "")
+	{
+		payload.put("start_at", startAt);
+	}
+	headerMap = Map();
+	headerMap.put("X-API-Key", apiKey);
+	headerMap.put("Content-Type", "application/json");
+	// API キーと会議URL はログに出さない
+	info "[create_bot] STEP2 送信 url=" + baseUrl + "/api/bots";
+	resp = Map();
+	try
+	{
+		resp = invokeurl
+		[
+			url :baseUrl + "/api/bots"
+			type :POST
+			parameters:payload.toString()
+			headers:headerMap
+			detailed:true
+		];
+	}
+	catch (e)
+	{
+		info "[create_bot] ERROR: バックエンドに送信できませんでした " + e;
+		return;
+	}
+	respCode = ifnull(resp.get("responseCode"), 0);
+	info "[create_bot] STEP2 応答コード=" + respCode;
+	if(respCode != 200)
+	{
+		// 502 は Recall.ai が予約を断ったとき。バックエンドが商談記録に状態「失敗」とエラー内容を書いている
+		info "[create_bot] ERROR: 予約に失敗しました 応答=" + ifnull(resp.get("responseText"), "").toString();
+		return;
+	}
+	resultMap = ifnull(resp.get("responseText"), "{}").toString().toMap();
+	info "[create_bot] ===== SUCCESS bot_id=" + ifnull(resultMap.get("bot_id"), "") + " join_at=" + ifnull(resultMap.get("join_at"), "（すぐに参加）") + " crm_updated=" + ifnull(resultMap.get("crm_updated"), "") + " =====";
+}

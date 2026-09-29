@@ -15,6 +15,12 @@
 | H6 | デスクトップ SDK のアップロード | `POST /api/v1/sdk_upload/`（`metadata`・`recording_config`）→ `id`・`upload_token`。`GET /api/v1/sdk_upload/{id}/` に録音 ID（`recording.id` か `recording_id`） | `app/services/recall.py` |
 | H7 | デスクトップ録音の削除 | `DELETE /api/v1/recording/{id}/`（ボットは `POST /api/v1/bot/{id}/delete_media/`） | `app/services/recall.py` |
 | H8 | COQL の書き方 | `Email like '%@domain'`、ルックアップ先の名前 `Account_Name.Account_Name`、カスタムモジュールへの `where Recall_ID = '...'` | `app/routers/desktop.py`, `app/pipeline/records.py` |
+| H9 | Recall.ai の Webhook の登録と署名 | ダッシュボードの Webhooks で送り先を追加し、署名用のシークレット（Svix 形式の `whsec_…`）を使う | `app/webhook_signature.py`, `scripts/setup_recall.sh` |
+| H10 | API キーの確認 | `GET /api/v1/bot/`（ボットの一覧）が、正しいキーなら 200、違うキー・別リージョンのキーなら 401 か 403 | `scripts/recall_check.py` |
+
+H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md) の手順3〜4。テストのボットを1回動かし、
+`bash scripts/recall_inspect.sh bot <Recall ID>`（ボット・録音の応答の形）と、処理ログの `recall.event_parsed`
+（Webhook の本文から読み取れた ID の有無と項目名）を見る。
 
 確認済み（2026-09-29、本番の Cloud Run で対面録音を DRY_RUN のまま通しで処理）：
 
@@ -44,6 +50,8 @@
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
 | D3 | 変数が無い・空のときの `zoho.crm.getOrgVariable` | null か空文字（どちらでも止まるようにしてある） | `crm/issue_recording_url.dg` |
+| D4 | `zoho.crm.getRecordById` で読んだ日時項目（開始日時）の値の形 | タイムゾーンつきの文字列（`2026-10-01T10:00:00+09:00`）。バックエンドはタイムゾーンつきだけを受け付ける（違えば応答 422） | `crm/create_bot.dg`, `crm/issue_recording_url.dg` |
+| D5 | ボット予約の関数（`create_bot.dg`）全体 | 本番で動いた `issue_recording_url.dg` と同じ書き方。本番ではまだ動かしていない | `crm/create_bot.dg` |
 
 確認済み（2026-09-29、マルサン木型の本番組織でワークフローから実行。バックエンドは応答 200 で録音用URLを発行）：
 

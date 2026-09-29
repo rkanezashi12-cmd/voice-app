@@ -46,6 +46,21 @@ def failure_message(ev: RecallEvent, attr: str) -> str:
 
 async def handle_recall_event(rt: Any, client_id: str, payload: dict[str, Any]) -> str:
     ev = parse_event(payload)
+    # 本文の形（docs/unverified-apis.md の H5）を実物で確かめるため、読み取れた ID の有無と項目名だけを残す
+    data = payload.get("data")
+    log_event(
+        logger,
+        "recall.event_parsed",
+        client_id=client_id,
+        event=ev.event,
+        code=ev.code,
+        sub_code=ev.sub_code,
+        record_id=ev.metadata_value("record_id"),
+        has_bot_id=bool(ev.bot_id),
+        has_recording_id=bool(ev.recording_id),
+        has_sdk_upload_id=bool(ev.sdk_upload_id),
+        data_keys=sorted(str(k) for k in data) if isinstance(data, dict) else None,
+    )
     cs = rt.client_services(client_id)
     if ev.kind == "bot" and ev.bot_id:
         if ev.status == "done":
