@@ -17,6 +17,17 @@
 | H7 | デスクトップ録音の削除 | `DELETE /api/v1/recording/{id}/`（ボットは `POST /api/v1/bot/{id}/delete_media/`） | `app/services/recall.py` |
 | H8 | COQL の書き方 | `Email like '%@domain'`、ルックアップ先の名前 `Account_Name.Account_Name`、カスタムモジュールへの `where Recall_ID = '...'` | `app/routers/desktop.py`, `app/pipeline/records.py` |
 
+## CRM の自動作成（scripts/crm_setup.py）
+
+実測リファレンス（zoho-crm-build）に載っていない形。`apply` の最後の確認（verify）で現物と突き合わせ、違えば止まる。
+
+| # | 項目 | 実装での想定 |
+|---|---|---|
+| Z1 | モジュール作成時の `display_field` の項目の API 名 | `Name` になる（違えば verify が報告する） |
+| Z2 | 複数行（大）の作り方 | `{"data_type": "textarea", "length": 32000, "textarea": {"type": "large"}}` |
+| Z3 | 重複を許さない項目 | `{"unique": {"case_sensitive": true}}` |
+| Z4 | URL 項目の型名 | `data_type: "website"` |
+
 ## 優先度：中（動くが挙動が変わる）
 
 | # | 項目 | 実装での想定 | 該当箇所 |
