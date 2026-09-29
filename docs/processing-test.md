@@ -70,7 +70,8 @@ cd ~/voice-app && bash scripts/reprocess.sh <商談記録の ID>
 
 2. CRM で**新しい**商談記録を作る（名前の先頭に【TEST】、取得方法「対面録音」）。
    ワークフローがバックエンドを呼び、商談記録の「録音用URL」に URL が入る
-3. スマホで「録音用URL」を開いて録音する（QR コードで開くときは `bash scripts/issue_process_url.sh <商談記録の ID>`）
+3. スマホで「録音用URL」を開いて録音する（QR コードで開くときは `bash scripts/issue_process_url.sh <商談記録の ID>`）。
+   要約だけでなく構造化項目まで確かめるときは、[test-conversation.md](test-conversation.md) の台本を2人で読み上げる
 4. 数分後に `bash scripts/process_logs.sh`。手順 2 の表の `dry_run.skip` の代わりに次が出ていれば成功
 
    | イベント | 意味 |

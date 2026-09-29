@@ -61,7 +61,7 @@ cd ~/voice-app && git pull && bash scripts/setup_recall.sh
 3. 設定 →「開発者向け機能」→「関数」→「ボットを予約」のログに `===== SUCCESS bot_id=…` が出ていれば予約できている。
    商談記録の状態が「予約済」になり、「Recall ID」に値が入る
 4. 1分ほどでボットが参加を求めてくる。待機室に入ったら入室を許可し、録音の許可を求められたら許可する
-5. 2人で1〜2分話してから、会議を終了する
+5. 2人で1〜2分話してから（構造化項目まで確かめるときは [test-conversation.md](test-conversation.md) の台本を読み上げる）、会議を終了する
 6. 5〜10分待って、Cloud Shell で次を実行する
 
    ```bash
