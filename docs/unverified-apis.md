@@ -31,6 +31,16 @@
 - 項目作成で一部だけ失敗すると **HTTP 207** が返り、行ごとの `status` が `error` になる（同じ回の他の項目は作成される）。
   HTTP ステータスだけでは失敗に気づけないので、行ごとの `status` を見る（`scripts/crm_setup.py` の `failures`）
 
+## CRM の Deluge 関数（crm/）
+
+実測リファレンス（zoho-deluge / zoho-crm-build）に載っていない形。関数の実行ログで確かめる（docs/crm-workflow.md の手順5）。
+
+| # | 項目 | 実装での想定 | 該当箇所 |
+|---|---|---|---|
+| D1 | `invokeurl` で JSON 本文と独自ヘッダーを送る形 | `parameters: <Map>.toString()` ＋ ヘッダー `Content-Type: application/json` と `X-API-Key` | `crm/issue_recording_url.dg` |
+| D2 | `invokeurl` の `detailed:true` の応答 | `responseCode`（数値）と `responseText`（本文の文字列） | 同上 |
+| D3 | 変数が無い・空のときの `zoho.crm.getOrgVariable` | null か空文字（どちらでも止まるようにしてある） | 同上 |
+
 ## 優先度：中（動くが挙動が変わる）
 
 | # | 項目 | 実装での想定 | 該当箇所 |

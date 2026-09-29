@@ -1,0 +1,94 @@
+void automation.issue_recording_url(String rec_id)
+{
+	// 入口B（対面録音）: 商談記録の「録音用URL」をバックエンド（Cloud Run）に発行させる。
+	// ワークフロー「録音用URLの発行」から呼ぶ。引数 rec_id に「商談記録 Id」をマッピングすること
+	// （マッピングが無いと rec_id が空になり、何もせずに終わる。そのときはログに「rec_id が空」と出る）。
+	// 録音用URL の書き込みはバックエンドが行う（DRY_RUN=true の間は書き込まない）。この関数は CRM に書き込まない。
+	// 手順は docs/crm-workflow.md。
+	//
+	// ---- 設定（API 名はバックエンドの app/field_map.py と合わせる） ----
+	MR_MODULE = "MeetingRecords";
+	F_CAPTURE_METHOD = "Capture_Method";
+	F_START_AT = "Start_At";
+	CAPTURE_IN_PERSON = "対面録音";
+	// CRM の変数（設定 → 開発者向け機能 → 変数）
+	VAR_URL = "meeting_notes_url";
+	VAR_API_KEY = "meeting_notes_api_key";
+	//
+	info "===== issue_recording_url START rec_id=" + ifnull(rec_id, "(空)") + " =====";
+	if(rec_id == null || rec_id.trim() == "")
+	{
+		info "[issue_recording_url] 中止: rec_id が空です。ワークフローの引数のマッピング（rec_id = 商談記録 Id）を確認してください";
+		return;
+	}
+	// ---- STEP1 商談記録を読む ----
+	rec = zoho.crm.getRecordById(MR_MODULE, rec_id.trim().toLong());
+	if(rec == null)
+	{
+		info "[issue_recording_url] 中止: 商談記録を取得できません（null）";
+		return;
+	}
+	if(rec.get("id") == null)
+	{
+		info "[issue_recording_url] 中止: 商談記録を取得できません res=" + rec.toString();
+		return;
+	}
+	captureMethod = ifnull(rec.get(F_CAPTURE_METHOD), "").toString();
+	startAt = ifnull(rec.get(F_START_AT), "").toString().trim();
+	info "[issue_recording_url] STEP1 取得方法=" + captureMethod + " 開始日時=" + startAt;
+	if(captureMethod != CAPTURE_IN_PERSON)
+	{
+		info "[issue_recording_url] 中止: 取得方法が「" + CAPTURE_IN_PERSON + "」ではありません（ワークフローの条件を確認）";
+		return;
+	}
+	// ---- STEP2 バックエンドに発行を依頼する ----
+	baseUrl = ifnull(zoho.crm.getOrgVariable(VAR_URL), "").toString().trim();
+	apiKey = ifnull(zoho.crm.getOrgVariable(VAR_API_KEY), "").toString().trim();
+	if(baseUrl == "" || apiKey == "")
+	{
+		info "[issue_recording_url] 中止: 変数 " + VAR_URL + " / " + VAR_API_KEY + " が未設定です";
+		return;
+	}
+	if(baseUrl.endsWith("/"))
+	{
+		baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+	}
+	payload = Map();
+	payload.put("record_id", rec_id.trim());
+	if(startAt != "")
+	{
+		payload.put("start_at", startAt);
+	}
+	headerMap = Map();
+	headerMap.put("X-API-Key", apiKey);
+	headerMap.put("Content-Type", "application/json");
+	// API キーはログに出さない
+	info "[issue_recording_url] STEP2 送信 url=" + baseUrl + "/api/recordings body=" + payload.toString();
+	resp = Map();
+	try
+	{
+		resp = invokeurl
+		[
+			url :baseUrl + "/api/recordings"
+			type :POST
+			parameters:payload.toString()
+			headers:headerMap
+			detailed:true
+		];
+	}
+	catch (e)
+	{
+		info "[issue_recording_url] ERROR: バックエンドに送信できませんでした " + e;
+		return;
+	}
+	respCode = ifnull(resp.get("responseCode"), 0);
+	info "[issue_recording_url] STEP2 応答コード=" + respCode;
+	if(respCode != 200)
+	{
+		info "[issue_recording_url] ERROR: 発行に失敗しました 応答=" + resp.toString();
+		return;
+	}
+	// 録音用URL（録音できる鍵を含む）はログに出さない
+	resultMap = ifnull(resp.get("responseText"), "{}").toString().toMap();
+	info "[issue_recording_url] ===== SUCCESS crm_updated=" + ifnull(resultMap.get("crm_updated"), "") + " expires_at=" + ifnull(resultMap.get("expires_at"), "") + " =====";
+}
