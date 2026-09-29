@@ -103,7 +103,7 @@ python3 scripts/crm_setup.py apply    # 内容をもう一度表示し、yes と
 | API 名 | **MeetingRecords**（アンダースコア不可） |
 | 権限（プロファイル） | すべてのプロファイル（スクリプトが自動で付ける） |
 
-名前の項目 **「商談記録名」**（API 名 `Name`）と **「商談記録の担当者」**（`Owner`）はモジュールと一緒に作られる。
+名前の項目 **「商談記録名」**（API 名 `Name`、120 文字まで）と **「商談記録の担当者」**（`Owner`）はモジュールと一緒に作られる。
 
 #### 項目
 
@@ -116,8 +116,8 @@ python3 scripts/crm_setup.py apply    # 内容をもう一度表示し、yes と
 | 5 | 商談 | ルックアップ | `Deal` | 関連付けるモジュール：商談 |
 | 6 | 先方担当者 | 1行 | `Contact_Name` | 文字数 255 |
 | 7 | 開始日時 | 日付/時刻 | `Start_At` | |
-| 8 | 会議URL | URL | `Meeting_URL` | |
-| 9 | 録音用URL | URL | `Recording_URL` | バックエンドが書き込む |
+| 8 | 会議URL | URL | `Meeting_URL` | 450 文字まで（Zoho の既定） |
+| 9 | 録音用URL | URL | `Recording_URL` | バックエンドが書き込む。450 文字まで |
 | 10 | Recall ID | 1行 | `Recall_ID` | 文字数 255。**「重複する値を許可しない」に✓**（大文字・小文字は区別しない。Zoho は区別する設定を API で受け付けない） |
 | 11 | エラー内容 | 複数行（小） | `Error_Message` | |
 | 12 | 要約 | 複数行（大） | `Summary` | |
