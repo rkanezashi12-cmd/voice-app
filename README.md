@@ -154,6 +154,7 @@ node tests/e2e/recorder.e2e.mjs                        # 擬似マイクで録�
 | [docs/crm-setup.md](docs/crm-setup.md) | CRM の「商談記録」「用語辞書」の作成手順（API） |
 | [docs/zoho-connection.md](docs/zoho-connection.md) | バックエンドの Zoho CRM 接続の設定手順 |
 | [docs/crm-workflow.md](docs/crm-workflow.md) | CRM から録音用URLを発行する関数・ワークフローの設定手順 |
+| [docs/processing-test.md](docs/processing-test.md) | 録音後の処理（Cloud Tasks・Gemini）の準備と、DRY_RUN のままの通し確認 |
 | [docs/unverified-apis.md](docs/unverified-apis.md) | 公式ドキュメントで直接確認できていない外部 API の仕様（実接続前に確認） |
 | [config/clients.example.json](config/clients.example.json) | クライアント（テナント）設定の例 |
 | [config/env.example.yaml](config/env.example.yaml) | Cloud Run の環境変数の例 |

@@ -8,7 +8,7 @@
 
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
-| H1 | **Gemini 3 系が asia-northeast1 で従量課金のまま使えるか** | 使える前提で `GEMINI_LOCATION=asia-northeast1`。3.5 Flash のページに「asia-northeast1 は単一ゾーンのプロビジョンド スループットのみ」との注記あり | `app/services/gemini.py` |
+| H1 | **Gemini 3 系が asia-northeast1 で従量課金のまま使えるか** | 使える前提で `GEMINI_LOCATION=asia-northeast1`。3.5 Flash のページに「asia-northeast1 は単一ゾーンのプロビジョンド スループットのみ」との注記あり。`scripts/setup_processing.sh` が東京リージョンに実際に問い合わせて、使えるモデルを確かめる | `app/services/gemini.py` |
 | H2 | Recall.ai のボット作成で `metadata`（文字列の辞書）を渡せ、`GET /bot/{id}/` と Webhook に返るか | `metadata: {"client_id", "record_id"}` | `app/services/recall.py`, `app/pipeline/sources.py` |
 | H3 | 録音の文字起こしの取り方 | `GET /api/v1/recording/{id}/` の `media_shortcuts.transcript.status.code`（done / processing / failed）と `data.download_url` | `app/services/recall_events.py` |
 | H4 | 会議後の文字起こし依頼の本文 | `POST /api/v1/recording/{id}/create_transcript/` に `{"provider": {"recallai_async": {"language_code": "ja"}}}`（クライアント設定の `transcript_request`） | `config/clients.example.json` |
