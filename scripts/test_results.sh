@@ -16,6 +16,6 @@ else
   echo "時刻,イベント,理由,非表示ms,停止ms,件数,未送信,状態,エラー"
   gcloud logging read "${BASE} AND jsonPayload.record_id=\"$1\"" --project="$PROJECT" \
     --freshness=2d --limit=500 \
-    --format='csv[no-heading](timestamp.date('%Y-%m-%d %H:%M:%S.%f',tz=Asia/Tokyo),jsonPayload.event_type,jsonPayload.d_reason,jsonPayload.d_hidden_ms,jsonPayload.d_gap_ms,jsonPayload.d_missing,jsonPayload.d_pending,jsonPayload.d_status,jsonPayload.d_error)' \
+    --format='csv[no-heading](timestamp.date("%Y-%m-%d %H:%M:%S.%f",tz=Asia/Tokyo),jsonPayload.event_type,jsonPayload.d_reason,jsonPayload.d_hidden_ms,jsonPayload.d_gap_ms,jsonPayload.d_missing,jsonPayload.d_pending,jsonPayload.d_status,jsonPayload.d_error)' \
     | sort
 fi
