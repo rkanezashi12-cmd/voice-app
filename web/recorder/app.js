@@ -377,6 +377,7 @@ async function interrupted(reason, detail = {}) {
   if (state.phase !== "recording") return;
   state.phase = "interrupted";
   log("interrupted", { reason, ...detail });
+  log("summary", currentSummary());
   stopMonitors();
   try {
     if (state.recorder) await state.recorder.stop();
@@ -540,6 +541,8 @@ async function drainAndComplete(allowMissing) {
   if (res.ok) {
     const data = await res.json();
     log("completed", { chunks: data.chunks, missing: data.missing, status: data.status });
+    // 診断結果もサーバーのログに残す（テストした人がコピーして送らなくても結果を確認できる）
+    log("summary", currentSummary());
     await state.queue.stop();
     for (const item of await state.store.list()) await state.store.delete(item.key);
     await persistMeta({ completed: true });
