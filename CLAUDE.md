@@ -42,6 +42,9 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 10. 4xx はリトライしない。429 / 5xx / 通信エラーは指数バックオフで最大3回。
 11. テストでは外部 API をすべてモックする（実 API を叩くテストは書かない。tests/conftest.py で通信を遮断している）。
 
+12. **Zoho の API で実機で確かめた新しい挙動は、スキル `zoho-crm-build` に追記する。** 正本は
+    `rkanezashi12-cmd/zoho-agri-demo` の `.claude/skills/zoho-crm-build/SKILL.md`（更新手順はその冒頭）。
+
 ### OAuth スコープ（Zoho。発行後は追加できない）
 
 ```
