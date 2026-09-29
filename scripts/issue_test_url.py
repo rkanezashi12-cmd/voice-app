@@ -49,7 +49,8 @@ def main() -> int:
         print("--process には --record-id（CRM の商談記録の ID。数字）が必要です", file=sys.stderr)
         return 2
 
-    secret = os.environ.get("RECORDING_TOKEN_SECRET")
+    # バックエンドは Secret Manager の値の前後の空白を除いて使う（app/clients.py の SecretResolver）ので合わせる
+    secret = os.environ.get("RECORDING_TOKEN_SECRET", "").strip()
     if not secret:
         print("環境変数 RECORDING_TOKEN_SECRET を設定してください（使い方は --help）", file=sys.stderr)
         return 2

@@ -146,11 +146,5 @@ echo "設定しました: 文字起こし ${MODEL_TRANSCRIBE} / 補正・要約 
 step "6. （任意）処理まで動く録音URLを発行する"
 read -rp "テスト用の商談記録の ID（飛ばすときは空のまま Enter）: " RECORD_ID
 if [ -n "$RECORD_ID" ]; then
-  if gcloud secrets describe recording-token-secret >/dev/null 2>&1; then
-    LOC_FLAG=()
-  else
-    LOC_FLAG=(--location="$REGION")
-  fi
-  RECORDING_TOKEN_SECRET="$(gcloud secrets versions access latest --secret=recording-token-secret "${LOC_FLAG[@]}")" \
-    python3 scripts/issue_test_url.py --service-url "$SERVICE_URL" --record-id "$RECORD_ID" --process
+  bash scripts/issue_process_url.sh "$RECORD_ID"
 fi
