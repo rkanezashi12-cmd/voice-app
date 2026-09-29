@@ -8,7 +8,7 @@
 - ボットは会議の参加者として見える（表示名は手順1で決める）。録音の許可を求められたら、主催者が許可する
 - `DRY_RUN=true` でもボットは会議に参加する（Recall.ai の料金がかかる）。止まるのは CRM への書き込みと録画の削除だけ
 - Recall.ai の公式ドキュメントはこの作業環境から開けないため、リクエストと応答の形の一部が未確認
-  （[unverified-apis.md](unverified-apis.md) の H2〜H10）。最初のテストで実物の応答を確かめる（手順4）
+  （[unverified-apis.md](unverified-apis.md) の H2〜H7・H9・H10）。最初のテストで実物の応答を確かめる（手順4）
 
 ## 事前に用意するもの
 
@@ -50,7 +50,8 @@ cd ~/voice-app && git pull && bash scripts/setup_recall.sh
 5. **引数の設定で、`rec_id` に「商談記録 Id」を割り当てる**。これを忘れると、エラーも出ずに何も起きない
 6. 保存して関連付け、ルールを保存する
 
-予約に成功するとバックエンドが「Recall ID」を書くので、同じ商談記録を編集してもボットを二重に予約しない。
+予約に成功するとバックエンドが「Recall ID」を書くので、同じ商談記録を編集してもボットを二重に予約しない
+（`DRY_RUN=true` の間はバックエンドが書かないので、編集して保存するたびに予約し直してしまう。テストは `DRY_RUN=false` で行う）。
 予約に失敗したときは状態が「失敗」になり、「エラー内容」に理由が入る。会議URL などを直して保存すると、もう一度予約する。
 
 ## 3. 試す（テスト用の会議で 15分ほど）
@@ -62,7 +63,7 @@ cd ~/voice-app && git pull && bash scripts/setup_recall.sh
    商談記録の状態が「予約済」になり、「Recall ID」に値が入る
 4. 1分ほどでボットが参加を求めてくる。待機室に入ったら入室を許可し、録音の許可を求められたら許可する
 5. 2人で1〜2分話してから（構造化項目まで確かめるときは [test-conversation.md](test-conversation.md) の台本を読み上げる）、会議を終了する
-6. 5〜10分待って、Cloud Shell で次を実行する
+6. 5〜10分待って、Cloud Shell で次を実行する（予約から1時間を超えたときは `bash scripts/process_logs.sh 180`）
 
    ```bash
    cd ~/voice-app && bash scripts/process_logs.sh
