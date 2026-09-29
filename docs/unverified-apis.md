@@ -31,6 +31,23 @@
 - 項目作成で一部だけ失敗すると **HTTP 207** が返り、行ごとの `status` が `error` になる（同じ回の他の項目は作成される）。
   HTTP ステータスだけでは失敗に気づけないので、行ごとの `status` を見る（`scripts/crm_setup.py` の `failures`）
 
+## CRM の Deluge 関数（crm/）
+
+実測リファレンス（zoho-deluge / zoho-crm-build）に載っていなかった形。
+
+| # | 項目 | 実装での想定 | 該当箇所 |
+|---|---|---|---|
+| D3 | 変数が無い・空のときの `zoho.crm.getOrgVariable` | null か空文字（どちらでも止まるようにしてある） | `crm/issue_recording_url.dg` |
+
+確認済み（2026-09-29、マルサン木型の本番組織でワークフローから実行。バックエンドは応答 200 で録音用URLを発行）：
+
+- D1 `invokeurl` に `parameters: <Map>.toString()` と、ヘッダー `Content-Type: application/json`・`X-API-Key` の Map を渡すと、
+  JSON 本文として届く（FastAPI がそのまま受け取れる）
+- D2 `detailed:true` の応答は Map で、`responseCode` は数値（`!= 200` で比べられる）、`responseText` は本文の文字列
+  （`.toString().toMap()` で読める）
+- ワークフローの関数の引数 `rec_id`（文字列）に「商談記録 Id」を割り当てると、レコード ID が文字列で届く
+- `zoho.crm.getOrgVariable("<API 名>")` は、値がある変数ならその値を返す
+
 ## 優先度：中（動くが挙動が変わる）
 
 | # | 項目 | 実装での想定 | 該当箇所 |
