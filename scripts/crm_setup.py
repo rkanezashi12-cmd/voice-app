@@ -15,18 +15,20 @@
     python3 scripts/crm_setup.py plan                         # 作るものを表示する（書き込みなし）
     python3 scripts/crm_setup.py apply                        # 実際に作る
     python3 scripts/crm_setup.py show-fields                  # 作った項目の実物の設定を表示する（書き込みなし）
+    python3 scripts/crm_setup.py check-access                 # バックエンドに要る権限（スコープ）がそろっているか試す（読み取りのみ）
 
 必要な環境変数:
     ZOHO_DC               com / jp / eu / in / com.au / ca（マルサン木型は com）
     ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET   Self Client の値
     ZOHO_REFRESH_TOKEN    exchange-code で得た値（exchange-code 以外で必要）
-    EXPECTED_ORG_ID / EXPECTED_ORG_DOMAIN / EXPECTED_COMPANY_NAME   show-org で確かめた値（plan / apply / show-fields で必要）
+    EXPECTED_ORG_ID / EXPECTED_ORG_DOMAIN / EXPECTED_COMPANY_NAME   show-org で確かめた値（plan / apply / show-fields / check-access で必要）
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -447,6 +449,57 @@ def field_details(api: Any, spec: list[ModuleSpec]) -> list[str]:
     return lines
 
 
+# バックエンド（Cloud Run）が使うスコープ（CLAUDE.md）ごとの、読み取りだけの確認。
+# 件数 API（actions/count）と COQL の id だけを使い、レコードの中身は取らない。
+ACCESS_CHECKS: list[tuple[str, str, str, str, dict[str, str] | None, Any]] = [
+    ("ZohoCRM.org.READ", "組織の情報", "GET", "/crm/v8/org", None, None),
+    ("ZohoCRM.settings.modules.READ", "モジュールの設定", "GET", "/crm/v8/settings/modules", None, None),
+    (
+        "ZohoCRM.settings.fields.READ",
+        "商談記録の項目の設定",
+        "GET",
+        "/crm/v8/settings/fields",
+        {"module": "MeetingRecords"},
+        None,
+    ),
+    ("ZohoCRM.users.READ", "ユーザー（自分）", "GET", "/crm/v8/users", {"type": "CurrentUser"}, None),
+    (
+        "ZohoCRM.modules.custom.ALL",
+        "商談記録の件数",
+        "GET",
+        "/crm/v8/MeetingRecords/actions/count",
+        None,
+        None,
+    ),
+    ("ZohoCRM.modules.custom.ALL", "用語辞書の件数", "GET", "/crm/v8/Glossary/actions/count", None, None),
+    ("ZohoCRM.modules.contacts.READ", "連絡先の件数", "GET", "/crm/v8/Contacts/actions/count", None, None),
+    ("ZohoCRM.modules.accounts.READ", "取引先の件数", "GET", "/crm/v8/Accounts/actions/count", None, None),
+    ("ZohoCRM.modules.deals.READ", "商談の件数", "GET", "/crm/v8/Deals/actions/count", None, None),
+    (
+        "ZohoCRM.coql.READ",
+        "COQL（商談記録の id）",
+        "POST",
+        "/crm/v8/coql",
+        None,
+        {"select_query": "select id from MeetingRecords where id is not null limit 1"},
+    ),
+]
+
+
+def check_access(api: Any) -> list[tuple[bool, str, str, str]]:
+    """(通ったか, スコープ, 確認の内容, エラーコード) の一覧。書き込みは行わない。"""
+    results = []
+    for scope, label, method, path, params, body in ACCESS_CHECKS:
+        try:
+            api.request(method, path, params, body)
+        except SetupError as e:
+            code = re.search(r'"code"\s*:\s*"([A-Z_]+)"', str(e))
+            results.append((False, scope, label, code.group(1) if code else str(e)[:120]))
+        else:
+            results.append((True, scope, label, ""))
+    return results
+
+
 # ---- 入口 ----
 
 
@@ -488,7 +541,14 @@ def exchange_code(code: str) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2 or argv[1] not in {"exchange-code", "show-org", "plan", "apply", "show-fields"}:
+    if len(argv) < 2 or argv[1] not in {
+        "exchange-code",
+        "show-org",
+        "plan",
+        "apply",
+        "show-fields",
+        "check-access",
+    }:
         print(__doc__)
         return 2
     command = argv[1]
@@ -521,6 +581,12 @@ def main(argv: list[str]) -> int:
         if command == "show-fields":
             print("\n".join(field_details(api, SPEC)))
             return 0
+        if command == "check-access":
+            results = check_access(api)
+            print("権限（スコープ）の確認（読み取りだけ）:")
+            for ok, scope, label, code in results:
+                print(f"  {'OK' if ok else 'NG'}  {scope:<32} {label}{'' if ok else f'（{code}）'}")
+            return 0 if all(ok for ok, *_ in results) else 1
         plan = build_plan(api, SPEC)
         print(describe(plan))
         if command == "plan":

@@ -52,6 +52,12 @@ cd ~/voice-app && bash scripts/issue_process_url.sh <商談記録の ID>
    | `dry_run.skip` | CRM に書く予定だった項目（`DRY_RUN` なので書いていない） |
    | `pipeline.finished` | `状態` が `done` |
 
+設定を直したあと、録音し直さずに同じ音声で処理をやり直すときは（音声は1日だけ残る）:
+
+```bash
+cd ~/voice-app && bash scripts/reprocess.sh <商談記録の ID>
+```
+
 ## うまくいかないとき
 
 `bash scripts/process_logs.sh` の結果を送る。よくあるもの:
@@ -62,3 +68,4 @@ cd ~/voice-app && bash scripts/issue_process_url.sh <商談記録の ID>
 | `auth.oidc_rejected` | キューのトークンの向き先（`SERVICE_URL`）かサービスアカウントの違い |
 | `gemini.retry` が続く・`pipeline.failed` に gemini | モデルの選び直し（`setup_processing.sh` の手順5） |
 | `pipeline.retry` | 一時的な失敗。最大3回まで自動で再試行する |
+| `pipeline.failed` に `OAUTH_SCOPE_MISMATCH` | バックエンドの Zoho 接続の権限不足。[zoho-connection.md](zoho-connection.md) の手順で発行し直す |

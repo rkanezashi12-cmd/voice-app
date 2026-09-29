@@ -6,7 +6,7 @@
 # 行うこと（何度実行しても壊れない。CRM には何も書き込まない）:
 #   1. Self Client の Client ID / Secret と認可コードを聞き、リフレッシュトークンに交換する（画面に出さない）
 #   2. 接続先の組織を表示し、合っているか確かめる（違えば何も保存せずに止まる）
-#   3. 商談記録・用語辞書の項目が読めるか確かめる
+#   3. 商談記録・用語辞書の項目が読めるか、バックエンドに要る権限（スコープ）がそろっているかを確かめる
 #   4. Secret Manager に保存する（zoho-client-id / zoho-client-secret / zoho-refresh-token）
 #   5. Cloud Run のクライアント設定（CLIENTS_CONFIG_JSON）に zoho を足す（DRY_RUN は変えない）
 set -euo pipefail
@@ -99,7 +99,8 @@ export ZOHO_CLIENT_ID ZOHO_CLIENT_SECRET
 
 step "2. 認可コード（10分で失効します。発行したらすぐ貼ってください）"
 echo "同じ Self Client の「Generate Code」タブで次を入れて「Create」を押してください。"
-echo "  Scope: ${SCOPES}"
+echo "  Scope（前回の CRM 作成用とは違います。この行を最後まで貼ってください）:"
+echo "    ${SCOPES}"
 echo "  Time Duration: 10 minutes"
 echo "  Scope Description: meeting-notes backend"
 echo "  組織を選ぶ画面が出たら、接続先の本番組織（マルサン木型）を選ぶ"
@@ -134,14 +135,18 @@ if printf '%s\n' "$FIELDS_OUT" | grep -q ': ありません$'; then
   fail "足りない項目があります。docs/crm-setup.md の手順で作成してから、もう一度実行してください"
 fi
 
-step "5. Secret Manager に保存"
+step "5. バックエンドに要る権限（スコープ）がそろっているか（読み取りだけ）"
+python3 scripts/crm_setup.py check-access ||
+  fail "足りない権限があります（NG の行）。何も保存していません。認可コードを、手順2のスコープを最後まで貼って発行し直し、もう一度実行してください"
+
+step "6. Secret Manager に保存"
 confirm "Client ID・Secret・リフレッシュトークンを保存し、Cloud Run の設定に足します。よろしければ yes、やめるなら no: " \
   "何も保存していません。"
 save_secret zoho-client-id "$ZOHO_CLIENT_ID"
 save_secret zoho-client-secret "$ZOHO_CLIENT_SECRET"
 save_secret zoho-refresh-token "$ZOHO_REFRESH_TOKEN"
 
-step "6. Cloud Run のクライアント設定に zoho を足す（DRY_RUN は変えません。数分かかります）"
+step "7. Cloud Run のクライアント設定に zoho を足す（DRY_RUN は変えません。数分かかります）"
 CURRENT_JSON="$(gcloud run services describe "$SERVICE" --region="$REGION" --format=json)"
 NEW_CLIENTS="$(CURRENT_JSON="$CURRENT_JSON" python3 - "$APP_CLIENT" "$DC" "$REF_PREFIX" <<'PY'
 import json
@@ -159,9 +164,10 @@ print(json.dumps(clients, ensure_ascii=False, separators=(",", ":")))
 PY
 )"
 echo "クライアント設定（秘密情報は参照だけ）: ${NEW_CLIENTS}"
-# JSON にカンマが含まれるので、区切り文字を @@ に変えて渡す
+# JSON にカンマが含まれるので、区切り文字を @@ に変えて渡す。
+# 動いているインスタンスは古いトークンを覚えているので、設定が同じでも新しい版を出す（ZOHO_TOKEN_UPDATED_AT）
 gcloud run services update "$SERVICE" --region="$REGION" --quiet \
-  --update-env-vars="^@@^CLIENTS_CONFIG_JSON=${NEW_CLIENTS}"
+  --update-env-vars="^@@^CLIENTS_CONFIG_JSON=${NEW_CLIENTS}@@ZOHO_TOKEN_UPDATED_AT=$(date -u +%Y%m%dT%H%M%SZ)"
 curl -fsS "${SERVICE_URL}/health"
 echo
 
