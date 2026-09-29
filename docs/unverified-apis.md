@@ -33,13 +33,20 @@
 
 ## CRM の Deluge 関数（crm/）
 
-実測リファレンス（zoho-deluge / zoho-crm-build）に載っていない形。関数の実行ログで確かめる（docs/crm-workflow.md の手順5）。
+実測リファレンス（zoho-deluge / zoho-crm-build）に載っていなかった形。
 
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
-| D1 | `invokeurl` で JSON 本文と独自ヘッダーを送る形 | `parameters: <Map>.toString()` ＋ ヘッダー `Content-Type: application/json` と `X-API-Key` | `crm/issue_recording_url.dg` |
-| D2 | `invokeurl` の `detailed:true` の応答 | `responseCode`（数値）と `responseText`（本文の文字列） | 同上 |
-| D3 | 変数が無い・空のときの `zoho.crm.getOrgVariable` | null か空文字（どちらでも止まるようにしてある） | 同上 |
+| D3 | 変数が無い・空のときの `zoho.crm.getOrgVariable` | null か空文字（どちらでも止まるようにしてある） | `crm/issue_recording_url.dg` |
+
+確認済み（2026-09-29、マルサン木型の本番組織でワークフローから実行。バックエンドは応答 200 で録音用URLを発行）：
+
+- D1 `invokeurl` に `parameters: <Map>.toString()` と、ヘッダー `Content-Type: application/json`・`X-API-Key` の Map を渡すと、
+  JSON 本文として届く（FastAPI がそのまま受け取れる）
+- D2 `detailed:true` の応答は Map で、`responseCode` は数値（`!= 200` で比べられる）、`responseText` は本文の文字列
+  （`.toString().toMap()` で読める）
+- ワークフローの関数の引数 `rec_id`（文字列）に「商談記録 Id」を割り当てると、レコード ID が文字列で届く
+- `zoho.crm.getOrgVariable("<API 名>")` は、値がある変数ならその値を返す
 
 ## 優先度：中（動くが挙動が変わる）
 
