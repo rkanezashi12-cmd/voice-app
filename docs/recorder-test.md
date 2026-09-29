@@ -70,7 +70,7 @@ Web ページでの録音を運用に使えるかを判断するためのテス�
 結果は Cloud Logging から読む（お客様に診断結果をコピーしてもらう必要はない）。
 
 ```bash
-export RECORDING_TOKEN_SECRET="$(gcloud secrets versions access latest --secret=recording-token-secret)"
+export RECORDING_TOKEN_SECRET="$(gcloud secrets versions access latest --secret=recording-token-secret --project=voice-ai-510014)"
 URL=https://meeting-notes-943049502425.asia-northeast1.run.app
 for t in a1-screen-off a2-home a3-call a4-30min a5-crm-app a6-battery; do
   echo "== $t"; python3 scripts/issue_test_url.py --service-url "$URL" --record-id "android-$t" --hours 168
