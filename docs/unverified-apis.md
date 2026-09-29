@@ -8,7 +8,6 @@
 
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
-| H1 | **Gemini 3 系が asia-northeast1 で従量課金のまま使えるか** | 使える前提で `GEMINI_LOCATION=asia-northeast1`。3.5 Flash のページに「asia-northeast1 は単一ゾーンのプロビジョンド スループットのみ」との注記あり | `app/services/gemini.py` |
 | H2 | Recall.ai のボット作成で `metadata`（文字列の辞書）を渡せ、`GET /bot/{id}/` と Webhook に返るか | `metadata: {"client_id", "record_id"}` | `app/services/recall.py`, `app/pipeline/sources.py` |
 | H3 | 録音の文字起こしの取り方 | `GET /api/v1/recording/{id}/` の `media_shortcuts.transcript.status.code`（done / processing / failed）と `data.download_url` | `app/services/recall_events.py` |
 | H4 | 会議後の文字起こし依頼の本文 | `POST /api/v1/recording/{id}/create_transcript/` に `{"provider": {"recallai_async": {"language_code": "ja"}}}`（クライアント設定の `transcript_request`） | `config/clients.example.json` |
@@ -16,6 +15,12 @@
 | H6 | デスクトップ SDK のアップロード | `POST /api/v1/sdk_upload/`（`metadata`・`recording_config`）→ `id`・`upload_token`。`GET /api/v1/sdk_upload/{id}/` に録音 ID（`recording.id` か `recording_id`） | `app/services/recall.py` |
 | H7 | デスクトップ録音の削除 | `DELETE /api/v1/recording/{id}/`（ボットは `POST /api/v1/bot/{id}/delete_media/`） | `app/services/recall.py` |
 | H8 | COQL の書き方 | `Email like '%@domain'`、ルックアップ先の名前 `Account_Name.Account_Name`、カスタムモジュールへの `where Recall_ID = '...'` | `app/routers/desktop.py`, `app/pipeline/records.py` |
+
+確認済み（2026-09-29、本番の Cloud Run で対面録音を DRY_RUN のまま通しで処理）：
+
+- H1 `gemini-3.5-flash` は asia-northeast1 のリージョナル エンドポイントで従量課金のまま使える
+  （`scripts/setup_processing.sh` の問い合わせで HTTP 200。1〜2分の録音の文字起こし〔音声〕・補正・要約が通った）。
+  補正（correct）は 478 文字で約100秒かかった。長い録音での所要時間は次の確認で見る
 
 ## CRM の自動作成（scripts/crm_setup.py）
 

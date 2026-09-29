@@ -206,3 +206,79 @@ def test_field_details_show_actual_settings() -> None:
         'MeetingRecords.Transcript「文字起こし全文」textarea length=32000 textarea={"type": "large"}' in lines
     )
     assert "MeetingRecords.Account「取引先」lookup 参照先=Accounts" in lines
+
+
+def test_check_access_reports_missing_scope_without_writing() -> None:
+    """権限の確認は読み取りだけで、足りないスコープを名前とエラーコードで返す（本番で出た OAUTH_SCOPE_MISMATCH）。"""
+    calls: list[tuple[str, str]] = []
+
+    class ScopeApi:
+        def request(self, method: str, path: str, params: dict | None = None, body: Any = None) -> Any:
+            calls.append((method, path))
+            if path in ("/crm/v8/MeetingRecords/actions/count", "/crm/v8/coql"):
+                raise cs.SetupError(
+                    f'{method} {path} が失敗しました（HTTP 401）: {{"code": "OAUTH_SCOPE_MISMATCH", "message": "x"}}'
+                )
+            return {}
+
+    results = cs.check_access(ScopeApi())
+    failed = {(scope, label) for ok, scope, label, _ in results if not ok}
+    assert failed == {
+        ("ZohoCRM.modules.custom.ALL", "商談記録の件数"),
+        ("ZohoCRM.coql.READ", "COQL（商談記録の id）"),
+    }
+    assert {code for ok, _, _, code in results if not ok} == {"OAUTH_SCOPE_MISMATCH"}
+    # POST は COQL（読み取り）だけ
+    assert {m for m, p in calls if p != "/crm/v8/coql"} == {"GET"}
+
+
+def test_backend_scopes_are_the_same_everywhere() -> None:
+    """CLAUDE.md のスコープ・check-access で試すスコープ・接続スクリプトで発行するスコープが一致している。"""
+    root = Path(__file__).resolve().parent.parent
+    block = (root / "CLAUDE.md").read_text(encoding="utf-8").split("### OAuth スコープ")[1].split("```")[1]
+    documented = {s.strip() for s in block.replace("\n", ",").split(",") if s.strip()}
+    assert documented == {scope for scope, *_ in cs.ACCESS_CHECKS}
+    script = (root / "scripts" / "setup_zoho_connection.sh").read_text(encoding="utf-8")
+    line = next(x for x in script.splitlines() if x.startswith("SCOPES="))
+    assert set(line.split('"')[1].split(",")) == documented
+
+
+def test_diagnose_shows_each_probe_without_record_contents() -> None:
+    """切り分け用の診断は、組織・ユーザーと各読み取りの成否を出し、レコードの中身は出さない。"""
+
+    class DiagApi:
+        def request(self, method: str, path: str, params: dict | None = None, body: Any = None) -> Any:
+            if path == "/crm/v8/org":
+                return {"org": [{"company_name": "株式会社テスト", "domain_name": "org1", "id": "9"}]}
+            if path == "/crm/v8/users":
+                return {
+                    "users": [
+                        {
+                            "full_name": "管理者",
+                            "email": "a@example.com",
+                            "profile": {"name": "Administrator"},
+                        }
+                    ]
+                }
+            if path == "/crm/v8/settings/modules/MeetingRecords":
+                return {"modules": [{"api_name": "MeetingRecords", "generated_type": "custom", "id": "5"}]}
+            if path.endswith("/actions/count"):
+                return {"count": 3}
+            if path == "/crm/v8/coql":
+                return {"data": [{"id": "123"}]}
+            if path == "/crm/v8/MeetingRecords/123" and params is None:
+                raise cs.SetupError(
+                    f'{method} {path} が失敗しました（HTTP 400）: {{"code": "INVALID_MODULE", "message": "x"}}'
+                )
+            return {"data": [{"id": "123", "Name": "秘密の商談名"}]}
+
+    lines = cs.diagnose(DiagApi(), "123")
+    text = "\n".join(lines)
+    assert "株式会社テスト（org1 / 9）" in text
+    assert "管理者 / a@example.com / プロファイル Administrator" in text
+    assert "3 件" in text and "1 件ヒット" in text
+    assert 'NG  レコードの取得（GET /MeetingRecords/123）: HTTP 400 {"code": "INVALID_MODULE"' in text
+    assert "OK  レコードの取得・項目指定（GET /MeetingRecords/123?fields=Name）" in text
+    assert "秘密の商談名" not in text
+    with pytest.raises(cs.SetupError):
+        cs.diagnose(DiagApi(), "1 or 1=1")
