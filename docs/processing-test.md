@@ -68,4 +68,5 @@ cd ~/voice-app && bash scripts/reprocess.sh <商談記録の ID>
 | `auth.oidc_rejected` | キューのトークンの向き先（`SERVICE_URL`）かサービスアカウントの違い |
 | `gemini.retry` が続く・`pipeline.failed` に gemini | モデルの選び直し（`setup_processing.sh` の手順5） |
 | `pipeline.retry` | 一時的な失敗。最大3回まで自動で再試行する |
+| `pipeline.failed` に `INVALID_MODULE` | Cloud Run のコードが古い（商談記録の API 名が変わる前のまま）。`bash scripts/deploy.sh` でデプロイし直す |
 | `pipeline.failed` に `OAUTH_SCOPE_MISMATCH` | バックエンドの Zoho 接続の権限不足。[zoho-connection.md](zoho-connection.md) の手順で発行し直す |

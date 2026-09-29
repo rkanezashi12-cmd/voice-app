@@ -66,6 +66,9 @@ done
 
 ### 1-3. デプロイ（初回は手動。GitHub Actions からのデプロイは Step 5 で用意）
 
+**2回目以降は `bash scripts/deploy.sh`**（環境変数をそのまま引き継いでコードだけを入れ替える）。下の `--env-vars-file` を使うデプロイは環境変数を丸ごと置き換えるので、初回以外は使わない。
+環境変数を変えるだけ（`gcloud run services update`）ではコードは入れ替わらない。
+
 `gcloud run deploy --source` は Cloud Build でイメージを作るため、Cloud Build API も有効にする。
 
 ```bash
