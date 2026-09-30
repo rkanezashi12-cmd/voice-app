@@ -91,5 +91,5 @@ H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md
 
 - iPhone の Safari の録音形式（`audio/mp4` の見込み）、Wake Lock、画面ロック・着信時の挙動
 - Zoho CRM アプリのリンクから開いたとき（アプリ内ブラウザ）にマイクが使えるか
-  - 2026-09-30：iPhone の Zoho CRM アプリから開いた録音ページでは録音できず、URL を Chrome に貼り直して録音できた。
+  - 2026-09-30：まだ試していない。iPhone は録音用URLを Chrome に貼って開き、録音できた。
     PC の CRM（Chrome）からは、録音用URLをそのまま開けた
