@@ -8,19 +8,44 @@
 
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
-| H2 | Recall.ai のボット作成で `metadata`（文字列の辞書）を渡せ、`GET /bot/{id}/` と Webhook に返るか | `metadata: {"client_id", "record_id"}` | `app/services/recall.py`, `app/pipeline/sources.py` |
-| H3 | 録音の文字起こしの取り方 | `GET /api/v1/recording/{id}/` の `media_shortcuts.transcript.status.code`（done / processing / failed）と `data.download_url` | `app/services/recall_events.py` |
-| H4 | 会議後の文字起こし依頼の本文 | `POST /api/v1/recording/{id}/create_transcript/` に `{"provider": {"recallai_async": {"language_code": "ja"}}}`（クライアント設定の `transcript_request`） | `config/clients.example.json` |
-| H5 | Webhook 本文の形 | `{"event": "bot.xxx", "data": {"data": {"code", "sub_code", "updated_at"}, "bot": {"id", "metadata"}, "recording": {...}, "sdk_upload": {...}}}` | `app/services/recall_events.py` |
-| H6 | デスクトップ SDK のアップロード | `POST /api/v1/sdk_upload/`（`metadata`・`recording_config`）→ `id`・`upload_token`。`GET /api/v1/sdk_upload/{id}/` に録音 ID（`recording.id` か `recording_id`） | `app/services/recall.py` |
-| H7 | デスクトップ録音の削除 | `DELETE /api/v1/recording/{id}/`（ボットは `POST /api/v1/bot/{id}/delete_media/`） | `app/services/recall.py` |
+| H5d | デスクトップ録音の Webhook（`sdk_upload.*`）の名前と本文 | 完了は `sdk_upload.complete`（公式ドキュメント）か `sdk_upload.completed`（Recall.ai のブログ）。両方受ける。本文の `data.sdk_upload.id` と `data.recording.id` | `app/pipeline/recall_flow.py`, `app/services/recall_events.py` |
+| H6 | デスクトップ SDK のアップロード | `POST /api/v1/sdk_upload/`（`metadata`・`recording_config`）→ `id`・`upload_token`。`GET /api/v1/sdk_upload/{id}/` に録音 ID（`recording.id` か `recording_id`）。作成時に `metadata` を受け付けるかは検索結果でも確認できていない | `app/services/recall.py` |
+| H7d | デスクトップ録音の削除 | `DELETE /api/v1/recording/{id}/`（検索結果の抜粋ではエンドポイントがある。実物ではまだ） | `app/services/recall.py` |
 | H8 | COQL の書き方 | `Email like '%@domain'`、ルックアップ先の名前 `Account_Name.Account_Name`、カスタムモジュールへの `where Recall_ID = '...'` | `app/routers/desktop.py`, `app/pipeline/records.py` |
-| H9 | Recall.ai の Webhook の登録と署名 | ダッシュボードの Webhooks で送り先を追加し、署名用のシークレット（Svix 形式の `whsec_…`）を使う | `app/webhook_signature.py`, `scripts/setup_recall.sh` |
-| H10 | API キーの確認 | `GET /api/v1/bot/`（ボットの一覧）が、正しいキーなら 200、違うキー・別リージョンのキーなら 401 か 403 | `scripts/recall_check.py` |
 
-H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md) の手順3〜4。テストのボットを1回動かし、
-`bash scripts/recall_inspect.sh bot <Recall ID>`（ボット・録音の応答の形）と、処理ログの `recall.event_parsed`
-（Webhook の本文から読み取れた ID の有無と項目名）を見る。
+H5d・H6・H7d はデスクトップ録音（入口C。Phase 2）を初めて動かすときに確かめる。
+
+確認済み（2026-10-01 日本時間、マルサン木型の本番組織と Google Meet で、ボットの予約から録画の削除まで通しで処理。
+[recall-bot.md](recall-bot.md) の「記録」）：
+
+- H2 ボット作成（`POST /api/v1/bot/`）で渡した `metadata: {"client_id", "record_id"}` が、Webhook の本文の `data.bot.metadata` に
+  そのまま入って届いた（処理ログの `recall.event_parsed` に `record_id`）。応答の `id` がボット ID（商談記録の「Recall ID」）
+- H3 `GET /api/v1/bot/{id}/` の `recordings[0].id` で録音を取り、`GET /api/v1/recording/{id}/` の
+  `media_shortcuts.transcript.status.code` が `done` になったら `data.download_url` から文字起こしを取れた（依頼から2分後の確認で取得）
+- H4 `POST /api/v1/recording/{id}/create_transcript/` に `{"provider": {"recallai_async": {"language_code": "ja"}}}` で、
+  日本語の文字起こしができた。`bot.done` を受けてすぐ依頼して通った
+- H5 ボットの Webhook の本文は `{"event": "bot.xxx", "data": {"data": {"code", "sub_code", "updated_at"}, "bot": {"id", "metadata"}}}`。
+  届いた順：`bot.joining_call`・`bot.in_waiting_room`（予約から約10秒）→ `bot.in_call_not_recording`・`bot.in_call_recording`
+  （入室を許可したとき）→ `bot.call_ended`（サブコード `timeout_exceeded_everyone_left`）・`bot.done`（全員が抜けたとき）
+- H7 ボットの録画の削除 `POST /api/v1/bot/{id}/delete_media/` が通り、Recall.ai のダッシュボードでボットの Status が
+  「Media Expired」、録画・文字起こしは表示されなくなった
+- H9 ダッシュボードの Webhooks（Svix の画面）で送り先を追加し、送り先の Signing Secret（`whsec_…`）で実際の通知の署名が合った。
+  送るイベントは「bot」と「sdk_upload」を選んだ（1つ以上選ばないと作れない）。
+  検索結果の抜粋には「2025-12-15 以降に作ったワークスペースは Workspace Verification Secret で検証する」とあるが、
+  このワークスペース（2026-09-30 作成）では送り先の Signing Secret で合った
+- H10 正しいキーで `GET /api/v1/bot/` が 200（`setup_recall.sh`）。違うキーのときの応答は見ていない
+- M2 文字起こしの JSON は `[{"participant": {"name"}, "words": [{"text"}]}]` の形で読めた（話者は Google Meet の表示名）
+
+検索結果の抜粋で確かめたもの（`docs.recall.ai` の全文は開けていない。2026-10-01）：
+
+- すぐ参加させるボット（`join_at` なし・10分未満）は、空きが無いと 507 が返る。Recall.ai は「30秒おきに最大10回やり直す」ことを勧め、
+  10分以上先の予約なら 507 は起きない。いまは数秒の再試行だけで、失敗したら「エラー内容」に開始日時を10分以上先にするよう書く
+  （`app/routers/bots.py` の `NO_READY_BOT_HINT`）
+- 自動で抜けるまでの既定：ほかの参加者が全員抜けてから 2秒（`everyone_left_timeout`）、待機室 1200秒、誰も来ない 1200秒、
+  録音していない 3600秒、録音を拒否された 30秒
+- 会議後の文字起こしの依頼は、ボットあたり1分に5回まで
+- `sub_code` は閉じた一覧として扱わないよう書かれている。`bot_kicked_from_call`（会議の途中で削除された）と
+  `timeout_exceeded_recording_permission_denied` は参加失敗にしない（M1）
 
 確認済み（2026-09-29、本番の Cloud Run で対面録音を DRY_RUN のまま通しで処理）：
 
@@ -50,7 +75,10 @@ H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
 | D3 | 変数が無い・空のときの `zoho.crm.getOrgVariable` | null か空文字（どちらでも止まるようにしてある） | `crm/issue_recording_url.dg` |
-| D5 | ボット予約の関数（`create_bot.dg`）全体 | 本番で動いた `issue_recording_url.dg` と同じ書き方。本番ではまだ動かしていない | `crm/create_bot.dg` |
+
+確認済み（2026-10-01 日本時間、マルサン木型の本番組織でワークフロー「ボットの予約」から実行）：
+
+- D5 ボット予約の関数（`create_bot.dg`）が動き、バックエンドがボットを予約して「Recall ID」と状態「予約済」を書いた（`bot.reserved`）
 
 確認済み（2026-09-29、マルサン木型の本番組織でワークフローから実行。バックエンドは応答 200 で録音用URLを発行）：
 
@@ -71,9 +99,8 @@ H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md
 
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
-| M1 | 参加失敗を示す `sub_code` の一覧 | `waiting_room` / `noone_joined` / `denied` / `kicked` などを含むものを「参加失敗」 | `app/field_map.py` の `JOIN_FAILURE_SUBCODE_HINTS` |
-| M2 | Recall.ai の文字起こし JSON | `[{"participant": {"name"}, "words": [{"text"}]}]` | `app/pipeline/sources.py` |
-| M3 | `sdk_upload.failed` イベントの有無 | 届けば「失敗」を記録。届かなくても処理は壊れない | `app/pipeline/recall_flow.py` |
+| M1 | 参加失敗を示す `sub_code` の一覧 | `waiting_room` / `noone_joined` / `denied` / `kicked` / `bot_blocked` などを含むものを「参加失敗」。ただし `bot_kicked_from_call`・`timeout_exceeded_recording_permission_denied` は除く（検索結果の抜粋の一覧で確認。実物で見たのは `timeout_exceeded_everyone_left` だけ） | `app/field_map.py` の `JOIN_FAILURE_SUBCODE_HINTS` / `NOT_JOIN_FAILURE_SUBCODES` |
+| M3 | `sdk_upload.failed` イベントの有無 | 届けば「失敗」を記録（Recall.ai に無いアップロードなら記録を作らない）。届かなくても処理は壊れない | `app/pipeline/recall_flow.py` |
 | M4 | Zoho の upsert の応答 | `data[0].action` が `insert` / `update` | `app/services/crm.py` |
 | M5 | Zoho の複数行（大）の文字数の数え方 | UTF-16 の単位で 32,000 以内に収める（多めに数える側） | `app/pipeline/formatting.py` |
 | M6 | Zoho でレコードが無いときの応答 | `GET /crm/v8/{module}/{id}` が 204（違う応答なら、録音ページの確認は録音を止めずに通す） | `app/services/crm.py`, `app/routers/recordings.py` |

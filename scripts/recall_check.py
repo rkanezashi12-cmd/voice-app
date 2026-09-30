@@ -3,7 +3,8 @@
 標準ライブラリだけで動く。読み取り（GET）だけを行い、ボットの作成・削除はしない。
 表示するのは項目の名前（パス）と、ID・状態・日時・数値の値だけ。会議 URL・署名付き URL・参加者名・発言などの
 文字列は「<文字列 N文字>」「<URL・非表示>」に置き換える。
-docs/unverified-apis.md の H2〜H8 を、公式ドキュメントの代わりに実物の応答で確かめるために使う。
+docs/unverified-apis.md の未確認の項目を、公式ドキュメントの代わりに実物の応答で確かめるときや、うまくいかないときの調査に使う
+（ボットの応答の形は 2026-10-01 に確認済み）。
 
 使い方（詳しくは docs/recall-bot.md。ふだんは scripts/setup_recall.sh・scripts/recall_inspect.sh から呼ぶ）:
     python3 scripts/recall_check.py check-key            # API キーとリージョンが合っているか（HTTP の結果だけ）

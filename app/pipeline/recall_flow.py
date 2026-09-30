@@ -52,7 +52,7 @@ def failure_message(ev: RecallEvent, attr: str) -> str:
 
 async def handle_recall_event(rt: Any, client_id: str, payload: dict[str, Any]) -> str:
     ev = parse_event(payload)
-    # 本文の形（docs/unverified-apis.md の H5）を実物で確かめるため、読み取れた ID の有無と項目名だけを残す
+    # 本文の形（docs/unverified-apis.md の H5。デスクトップは未確認）を確かめられるように、読み取れた ID の有無と項目名だけを残す
     data = payload.get("data")
     log_event(
         logger,

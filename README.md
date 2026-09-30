@@ -5,7 +5,7 @@ Zoho CRM の「商談記録」に保存する（Zoho の DC はクライアン�
 
 | 入口 | 仕組み | 状態 |
 |---|---|---|
-| A ボット参加（社内デモ・予備） | CRM ワークフロー → `POST /api/bots` → Recall.ai Meeting Bot | 準備済み（設定・テストの手順は [docs/recall-bot.md](docs/recall-bot.md)。Recall.ai の仕様の一部は最初のテストで確かめる） |
+| A ボット参加（社内デモ・予備） | CRM ワークフロー → `POST /api/bots` → Recall.ai Meeting Bot | **動作確認済み**（Google Meet で予約 → 参加・録音 → 文字起こし・要約 → 商談記録の更新 → 録画の削除。手順は [docs/recall-bot.md](docs/recall-bot.md)。Zoom / Teams はまだ） |
 | B 対面録音 | CRM ワークフロー → `POST /api/recordings` → スマホの録音ページ | **動作確認済み**（録音 → 文字起こし・要約・構造化項目 → 商談記録の更新。3〜4分の台本で確認） |
 | C デスクトップアプリ（本番の標準） | Electron ＋ Recall.ai Desktop Recording SDK | 受け口は実装済み、アプリは Phase 2 |
 
