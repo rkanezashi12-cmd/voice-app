@@ -48,6 +48,7 @@ class MockServer {
     this.completes = [];
     this.failPuts = 0;
     this.rejectPuts = false;
+    this.sessionError = null; // { status, detail }：/session を失敗させる
     this.server = http.createServer((req, res) => this.handle(req, res).catch((e) => {
       res.writeHead(500);
       res.end(String(e));
@@ -73,6 +74,7 @@ class MockServer {
     this.completes = [];
     this.failPuts = 0;
     this.rejectPuts = false;
+    this.sessionError = null;
   }
 
   async body(req) {
@@ -106,6 +108,7 @@ class MockServer {
       const [, recordId, action] = m;
       if (!(req.headers.authorization || "").startsWith("Bearer ")) return this.json(res, 401, { detail: "no auth" });
       if (action === "session") {
+        if (this.sessionError) return this.json(res, this.sessionError.status, { detail: this.sessionError.detail });
         return this.json(res, 200, {
           record_id: recordId,
           expires_at: new Date(Date.now() + 3600e3).toISOString(),
@@ -305,6 +308,22 @@ it("未送信のまま再読み込みしても、端末に残った音声を送�
   await page.click("#btn-finish");
   await waitFor(() => server.completes.length === 1);
   await page.waitForSelector("#view-done:not([hidden])");
+  await page.close();
+});
+
+it("処理が済んだ商談記録を開くと、理由を表示して録音させない", async ({ context, server }) => {
+  const detail =
+    "この商談記録は処理が済んでいます（要約と文字起こしが入っています）。" +
+    "録音するときは、CRM で新しい商談記録を作り、その録音用URLを開いてください。";
+  server.sessionError = { status: 409, detail };
+  const page = await context.newPage();
+  page.on("pageerror", (e) => console.error("pageerror:", e.message));
+  await page.goto(`${server.origin}/recorder/#${makeToken("rec-done")}`);
+  await page.waitForSelector("#view-error:not([hidden])");
+  assert.equal(await page.textContent("#error-message"), detail);
+  assert.equal(await page.isVisible("#view-main"), false, "録音の画面を出さない");
+  assert.equal(await page.isVisible("#btn-start"), false, "録音開始のボタンを出さない");
+  assert.equal(server.uploads.size, 0);
   await page.close();
 });
 

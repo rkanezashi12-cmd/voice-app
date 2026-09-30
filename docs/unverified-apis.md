@@ -15,12 +15,19 @@
 | H6 | デスクトップ SDK のアップロード | `POST /api/v1/sdk_upload/`（`metadata`・`recording_config`）→ `id`・`upload_token`。`GET /api/v1/sdk_upload/{id}/` に録音 ID（`recording.id` か `recording_id`） | `app/services/recall.py` |
 | H7 | デスクトップ録音の削除 | `DELETE /api/v1/recording/{id}/`（ボットは `POST /api/v1/bot/{id}/delete_media/`） | `app/services/recall.py` |
 | H8 | COQL の書き方 | `Email like '%@domain'`、ルックアップ先の名前 `Account_Name.Account_Name`、カスタムモジュールへの `where Recall_ID = '...'` | `app/routers/desktop.py`, `app/pipeline/records.py` |
+| H9 | Recall.ai の Webhook の登録と署名 | ダッシュボードの Webhooks で送り先を追加し、署名用のシークレット（Svix 形式の `whsec_…`）を使う | `app/webhook_signature.py`, `scripts/setup_recall.sh` |
+| H10 | API キーの確認 | `GET /api/v1/bot/`（ボットの一覧）が、正しいキーなら 200、違うキー・別リージョンのキーなら 401 か 403 | `scripts/recall_check.py` |
+
+H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md) の手順3〜4。テストのボットを1回動かし、
+`bash scripts/recall_inspect.sh bot <Recall ID>`（ボット・録音の応答の形）と、処理ログの `recall.event_parsed`
+（Webhook の本文から読み取れた ID の有無と項目名）を見る。
 
 確認済み（2026-09-29、本番の Cloud Run で対面録音を DRY_RUN のまま通しで処理）：
 
 - H1 `gemini-3.5-flash` は asia-northeast1 のリージョナル エンドポイントで従量課金のまま使える
   （`scripts/setup_processing.sh` の問い合わせで HTTP 200。1〜2分の録音の文字起こし〔音声〕・補正・要約が通った）。
-  補正（correct）は 478 文字で約100秒かかった。長い録音での所要時間は次の確認で見る
+  補正（correct）は 478 文字で1回目は約100秒、2回目（DRY_RUN=false で同じ音声）は約9秒で、処理全体は約35秒。
+  長い録音での所要時間は次の確認で見る
 
 ## CRM の自動作成（scripts/crm_setup.py）
 
@@ -43,6 +50,8 @@
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
 | D3 | 変数が無い・空のときの `zoho.crm.getOrgVariable` | null か空文字（どちらでも止まるようにしてある） | `crm/issue_recording_url.dg` |
+| D4 | `zoho.crm.getRecordById` で読んだ日時項目（開始日時）の値の形 | タイムゾーンつきの文字列（`2026-10-01T10:00:00+09:00`）。バックエンドはタイムゾーンつきだけを受け付ける（違えば応答 422） | `crm/create_bot.dg`, `crm/issue_recording_url.dg` |
+| D5 | ボット予約の関数（`create_bot.dg`）全体 | 本番で動いた `issue_recording_url.dg` と同じ書き方。本番ではまだ動かしていない | `crm/create_bot.dg` |
 
 確認済み（2026-09-29、マルサン木型の本番組織でワークフローから実行。バックエンドは応答 200 で録音用URLを発行）：
 
@@ -62,11 +71,16 @@
 | M3 | `sdk_upload.failed` イベントの有無 | 届けば「失敗」を記録。届かなくても処理は壊れない | `app/pipeline/recall_flow.py` |
 | M4 | Zoho の upsert の応答 | `data[0].action` が `insert` / `update` | `app/services/crm.py` |
 | M5 | Zoho の複数行（大）の文字数の数え方 | UTF-16 の単位で 32,000 以内に収める（多めに数える側） | `app/pipeline/formatting.py` |
-| M6 | Zoho でレコードが無いときの応答 | `GET /crm/v8/{module}/{id}` が 204 | `app/services/crm.py` |
-| M7 | Gemini の `response_json_schema`（JSON Schema）と `null` を含む型 `["string", "null"]` | そのまま渡す | `prompts/schema.json` |
-| M8 | Gemini に MP3 をインライン（`Part.from_bytes`）で渡せる大きさ | 20 分 × 32kbps ≒ 5MB | `app/services/audio.py` |
+| M6 | Zoho でレコードが無いときの応答 | `GET /crm/v8/{module}/{id}` が 204（違う応答なら、録音ページの確認は録音を止めずに通す） | `app/services/crm.py`, `app/routers/recordings.py` |
+| M8 | Gemini に MP3 をインライン（`Part.from_bytes`）で渡せる大きさ | 20 分 × 32kbps ≒ 5MB（1〜2分は通った） | `app/services/audio.py` |
 | M9 | Cloud Tasks のタスク名による重複排除が効く期間 | 同じ名前は一定期間登録できない（期間は要確認）。処理済みのレコードは共通処理側でも止める | `app/services/tasks.py` |
-| M10 | 署名付き URL の署名（鍵ファイルなし） | `generate_signed_url(service_account_email=..., access_token=...)` で IAM signBlob | `app/services/storage.py` |
+
+確認済み（2026-09-30 日本時間、本番の Cloud Run で `DRY_RUN=false` にして商談記録に書き込み。docs/processing-test.md の記録）：
+
+- M7 `response_json_schema` に `null` を含む型 `["string", "null"]` のスキーマを渡すと受け付けられ、JSON で返る
+  （`prompts/schema.json` のまま。要約・構造化項目を商談記録に書き込めた）
+- M10 鍵ファイルなしの署名付き URL（`generate_signed_url(service_account_email=..., access_token=...)` で IAM signBlob）で、
+  録音ページから GCS に直接アップロードできる
 
 ## 実機テストで確かめるもの（docs/recorder-test.md）
 

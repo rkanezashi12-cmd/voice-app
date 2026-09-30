@@ -5,12 +5,12 @@ Zoho CRM の「商談記録」に保存する（Zoho の DC はクライアン�
 
 | 入口 | 仕組み | 状態 |
 |---|---|---|
-| A ボット参加（社内デモ・予備） | CRM ワークフロー → `POST /api/bots` → Recall.ai Meeting Bot | 実装済み（Deluge は Step 4） |
-| B 対面録音 | CRM ワークフロー → `POST /api/recordings` → スマホの録音ページ | **Step 1（録音テスト可）** |
+| A ボット参加（社内デモ・予備） | CRM ワークフロー → `POST /api/bots` → Recall.ai Meeting Bot | 準備済み（設定・テストの手順は [docs/recall-bot.md](docs/recall-bot.md)。Recall.ai の仕様の一部は最初のテストで確かめる） |
+| B 対面録音 | CRM ワークフロー → `POST /api/recordings` → スマホの録音ページ | **動作確認済み**（録音 → 文字起こし・要約 → 商談記録の更新。1〜2分の録音で確認） |
 | C デスクトップアプリ（本番の標準） | Electron ＋ Recall.ai Desktop Recording SDK | 受け口は実装済み、アプリは Phase 2 |
 
 - 開発・デモの接続先は **お客様の本番 Zoho CRM**。`DRY_RUN=true`（既定）では CRM への書き込みと音声の削除を行わない。
-- 実書き込みはユーザーの指示があるときだけ `DRY_RUN=false` にする。
+- 実書き込みはユーザーの指示があるときだけ `DRY_RUN=false` にする。今の設定は `/health` の `dry_run` で確かめる（[docs/processing-test.md](docs/processing-test.md) の手順 3）。
 
 ---
 
@@ -157,7 +157,9 @@ node tests/e2e/recorder.e2e.mjs                        # 擬似マイクで録�
 | [docs/crm-setup.md](docs/crm-setup.md) | CRM の「商談記録」「用語辞書」の作成手順（API） |
 | [docs/zoho-connection.md](docs/zoho-connection.md) | バックエンドの Zoho CRM 接続の設定手順 |
 | [docs/crm-workflow.md](docs/crm-workflow.md) | CRM から録音用URLを発行する関数・ワークフローの設定手順 |
-| [docs/processing-test.md](docs/processing-test.md) | 録音後の処理（Cloud Tasks・Gemini）の準備と、DRY_RUN のままの通し確認 |
+| [docs/processing-test.md](docs/processing-test.md) | 録音後の処理（Cloud Tasks・Gemini）の準備と通し確認（DRY_RUN のまま / CRM に書き込み）、確認の記録 |
+| [docs/recall-bot.md](docs/recall-bot.md) | オンライン商談のボット参加（入口A：Recall.ai）の設定・CRM の関数とワークフロー・テスト手順 |
+| [docs/test-conversation.md](docs/test-conversation.md) | 録音テスト用の商談の台本と、期待する結果・用語辞書の例 |
 | [docs/unverified-apis.md](docs/unverified-apis.md) | 公式ドキュメントで直接確認できていない外部 API の仕様（実接続前に確認） |
 | [config/clients.example.json](config/clients.example.json) | クライアント（テナント）設定の例 |
 | [config/env.example.yaml](config/env.example.yaml) | Cloud Run の環境変数の例 |

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 from typing import Any
 
 import httpx
@@ -18,6 +19,7 @@ from app.logs import log_event
 logger = logging.getLogger(__name__)
 
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+_URL_RE = re.compile(r"https?://[^\s、。，）」\"'<>]+")
 MAX_RETRY_WAIT_SECONDS = 30.0
 
 
@@ -75,10 +77,29 @@ async def send(
         await asyncio.sleep(min(wait, MAX_RETRY_WAIT_SECONDS) + random.uniform(0, base_delay / 4))  # noqa: S311
 
 
+def _upstream_message(item: dict[str, Any]) -> str | None:
+    """外部サービスのエラーの説明を拾う。項目ごとのエラー（{"meeting_url": ["..."]}）は項目名と最初の文だけ。
+
+    会議 URL（パスコードを含むことがある）や署名付き URL をログ・CRM に残さないよう、URL は伏せる。
+    """
+    msg = item.get("message") or item.get("detail") or item.get("error")
+    if isinstance(msg, str) and msg:
+        return _URL_RE.sub("<URL>", msg)
+    parts = [
+        f"{key}: {_URL_RE.sub('<URL>', value[0])}"
+        for key, value in item.items()
+        if isinstance(value, list) and value and isinstance(value[0], str)
+    ]
+    return "、".join(parts[:2]) or None
+
+
 def error_from_response(
     service: str, resp: httpx.Response, message: str | None = None
 ) -> ExternalServiceError:
-    """レスポンスから例外を作る。本文は外部サービスのエラーコード・メッセージだけを拾う。"""
+    """レスポンスから例外を作る。本文は外部サービスのエラーコード・メッセージだけを拾う。
+
+    message（何をしていて失敗したか）に、外部サービスが返した理由を括弧で添える（原因を CRM とログで追えるように）。
+    """
     code = None
     detail = message or ""
     try:
@@ -91,9 +112,9 @@ def error_from_response(
         if isinstance(data, list) and data and isinstance(data[0], dict):
             item = data[0]
         code = item.get("code") if isinstance(item.get("code"), str) else None
-        msg = item.get("message") or item.get("detail") or item.get("error")
-        if isinstance(msg, str) and not detail:
-            detail = msg
+        upstream = _upstream_message(item)
+        if upstream:
+            detail = f"{detail}（{upstream}）" if detail else upstream
     return ExternalServiceError(
         service,
         (detail or resp.reason_phrase or "エラー")[:300],

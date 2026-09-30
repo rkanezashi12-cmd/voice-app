@@ -1,7 +1,7 @@
 """入口B：対面録音。
 
 - POST /api/recordings                         … CRM ワークフロー（X-API-Key）。録音ページ URL を発行
-- GET  /api/recordings/{record_id}/session      … 録音ページ（Bearer）。トークンの内容確認
+- GET  /api/recordings/{record_id}/session      … 録音ページ（Bearer）。トークンの内容と、録音できる商談記録かの確認
 - POST /api/recordings/{record_id}/upload-url   … 録音ページ。1チャンク分の署名付き PUT URL を発行
 - POST /api/recordings/{record_id}/events       … 録音ページ。停止検知などの診断イベントをログに残す
 - POST /api/recordings/{record_id}/complete     … 録音ページ。録音終了 → 共通処理を Cloud Tasks に積む
@@ -20,7 +20,9 @@ from pydantic import BaseModel, Field, field_validator
 
 from app import recording_objects as ro
 from app.deps import ApiClientDep, RecordingTokenDep, RuntimeDep
+from app.errors import AppError
 from app.logs import log_event
+from app.pipeline.records import is_finished
 from app.recording_token import RECORD_ID_RE, compute_expiry, issue
 from app.services.tasks import task_name
 
@@ -96,12 +98,53 @@ class SessionInfo(BaseModel):
 
 
 @router.get("/{record_id}/session", response_model=SessionInfo)
-async def session_info(claims: RecordingTokenDep) -> SessionInfo:
+async def session_info(claims: RecordingTokenDep, rt: RuntimeDep) -> SessionInfo:
+    if not claims.test:
+        await _check_recordable(rt, claims.client_id, claims.record_id)
     return SessionInfo(
         record_id=claims.record_id,
         expires_at=datetime.fromtimestamp(claims.expires_at, tz=UTC),
         test=claims.test,
     )
+
+
+async def _check_recordable(rt: Any, client_id: str, record_id: str) -> None:
+    """録音を始める前に商談記録を確かめる（録音ページを開いたとき）。
+
+    処理が済んだ商談記録で録音すると、共通処理は二重処理を防ぐために処理を飛ばして音声を消す。
+    黙って消えないように、録音させずに理由を表示する。CRM に問い合わせられないときは録音を止めない
+    （商談の場で録音の機会を逃さない。問題があれば共通処理が商談記録に「失敗」を書く）。
+    """
+    cs = rt.client_services(client_id)
+    fm = cs.field_map
+    try:
+        crm = await cs.crm()
+        record = await crm.get_record(fm.meeting_record.module, record_id)
+    except AppError as exc:
+        log_event(
+            logger,
+            "recording.record_check_failed",
+            logging.WARNING,
+            client_id=client_id,
+            record_id=record_id,
+            error_code=exc.code,
+        )
+        return
+    if record is None:
+        log_event(
+            logger, "recording.record_not_found", logging.WARNING, client_id=client_id, record_id=record_id
+        )
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "商談記録が見つかりません（削除された可能性があります）。CRM で商談記録を確かめてください。",
+        )
+    if is_finished(record, fm):
+        log_event(logger, "recording.already_processed", client_id=client_id, record_id=record_id)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "この商談記録は処理が済んでいます（要約と文字起こしが入っています）。"
+            "録音するときは、CRM で新しい商談記録を作り、その録音用URLを開いてください。",
+        )
 
 
 class UploadUrlRequest(BaseModel):

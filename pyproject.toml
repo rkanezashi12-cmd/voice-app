@@ -22,6 +22,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S108"]
 "scripts/crm_setup.py" = ["S310"]  # 接続先は https://*.zoho.{dc} に固定
+"scripts/recall_check.py" = ["S310"]  # 接続先は https:// だけ（RECALL_BASE_URL を確かめている）
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

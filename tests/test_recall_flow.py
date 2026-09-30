@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.pipeline.recall_flow import bot_status_for, handle_recall_event
@@ -70,6 +72,28 @@ async def test_waiting_room_and_recording_are_written(runtime: Runtime, crm: Fak
     assert await handle_recall_event(runtime, "default", bot_event("in_waiting_room")) == "status_waiting"
     assert await handle_recall_event(runtime, "default", bot_event("in_call_recording")) == "status_recording"
     assert [w[F.status] for w in crm.writes_to("5001")] == [S.waiting, S.recording]
+
+
+async def test_event_shape_is_logged_without_content(
+    runtime: Runtime, caplog: pytest.LogCaptureFixture
+) -> None:
+    """本文の形（docs/unverified-apis.md の H5）を実物で確かめるため、ID の有無と項目名だけを残す。"""
+    with caplog.at_level(logging.INFO):
+        await handle_recall_event(runtime, "default", bot_event("in_waiting_room"))
+    parsed = [r for r in caplog.records if r.getMessage() == "recall.event_parsed"]
+    assert len(parsed) == 1
+    fields = parsed[0].fields
+    assert (fields["event"], fields["code"], fields["record_id"]) == (
+        "bot.in_waiting_room",
+        "in_waiting_room",
+        "5001",
+    )
+    assert (fields["has_bot_id"], fields["has_recording_id"], fields["has_sdk_upload_id"]) == (
+        True,
+        False,
+        False,
+    )
+    assert fields["data_keys"] == ["bot", "data"]
 
 
 async def test_transient_status_is_ignored(runtime: Runtime, crm: FakeCrm) -> None:
