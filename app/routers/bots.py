@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
 from app.deps import ApiClientDep, RuntimeDep
-from app.errors import AppError, ConfigError
+from app.errors import AppError, ConfigError, ExternalServiceError
 from app.logs import log_event
 from app.pipeline import formatting as fmt
 from app.recording_token import RECORD_ID_RE
@@ -26,6 +26,11 @@ router = APIRouter(prefix="/api/bots", tags=["bots"])
 # Recall.ai は join_at を10分以上先にすれば定刻の参加を保証する。それより直前なら今すぐ参加させる
 SCHEDULE_MIN_LEAD = timedelta(minutes=10)
 MEETING_HOSTS = ("zoom.us", "zoom.com", "teams.microsoft.com", "teams.live.com", "meet.google.com")
+# Recall.ai の 507：すぐ参加できるボットの空きが無い（10分以上先の予約では起きない。docs/unverified-apis.md）
+NO_READY_BOT_HINT = (
+    "Recall.ai にすぐ参加できるボットの空きがありませんでした。開始日時を10分以上先にして保存し直してください"
+    "（10分以上先の予約なら空きの問題は起きません）"
+)
 
 
 class CreateBotRequest(BaseModel):
@@ -92,7 +97,10 @@ async def create_bot(body: CreateBotRequest, client: ApiClientDep, rt: RuntimeDe
             recording_config=cfg.bot_recording_config or None,
         )
     except AppError as exc:
-        message = fmt.clip(f"ボットを予約できませんでした: {exc.message}", fm.limits.error_message)
+        reason = exc.message
+        if isinstance(exc, ExternalServiceError) and exc.status == 507:
+            reason = f"{NO_READY_BOT_HINT}（{exc.message}）"
+        message = fmt.clip(f"ボットを予約できませんでした: {reason}", fm.limits.error_message)
         await crm.update_record(
             f.module, body.record_id, {f.status: fm.status.failed, f.error_message: message}
         )

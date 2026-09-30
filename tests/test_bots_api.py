@@ -51,6 +51,21 @@ def test_recall_failure_is_written_to_crm(client: TestClient, recall: FakeRecall
     write = crm.writes_to("5001")[0]
     assert write[F.status] == S.failed
     assert "ボットを予約できませんでした" in write[F.error_message]
+    assert "開始日時を10分以上先にして" in write[F.error_message], (
+        "507 は空き不足。予約にすれば起きないと案内する"
+    )
+    assert "空きボットがありません" in write[F.error_message], "Recall.ai が返した理由も残す"
+
+
+def test_other_recall_failures_have_no_schedule_hint(
+    client: TestClient, recall: FakeRecall, crm: FakeCrm
+) -> None:
+    recall.fail_create = ExternalServiceError("recall", "meeting_url が不正です", status=400)
+    res = client.post("/api/bots", json={"record_id": "5001", "meeting_url": ZOOM}, headers=HEADERS)
+    assert res.status_code == 502
+    message = crm.writes_to("5001")[0][F.error_message]
+    assert "meeting_url が不正です" in message
+    assert "開始日時を10分以上先にして" not in message
 
 
 def test_rejects_non_meeting_urls(client: TestClient, recall: FakeRecall) -> None:
