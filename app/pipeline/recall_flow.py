@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.client_services import ClientServices
-from app.field_map import BOT_EVENT_STATUS, JOIN_FAILURE_SUBCODE_HINTS
+from app.field_map import BOT_EVENT_STATUS, JOIN_FAILURE_SUBCODE_HINTS, NOT_JOIN_FAILURE_SUBCODES
 from app.logs import log_event
 from app.pipeline import formatting as fmt
 from app.pipeline.process import PROCESS_PATH, ProcessRequest, ProcessRun
@@ -30,7 +30,11 @@ def bot_status_for(ev: RecallEvent) -> str | None:
     """ボットの状態通知から、CRM に書く状態（StatusValues の属性名）を決める。"""
     code = ev.status
     sub = (ev.sub_code or "").lower()
-    if code in ("fatal", "call_ended") and any(hint in sub for hint in JOIN_FAILURE_SUBCODE_HINTS):
+    if (
+        code in ("fatal", "call_ended")
+        and sub not in NOT_JOIN_FAILURE_SUBCODES
+        and any(hint in sub for hint in JOIN_FAILURE_SUBCODE_HINTS)
+    ):
         return "join_failed"
     return BOT_EVENT_STATUS.get(code)
 

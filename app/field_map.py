@@ -144,7 +144,7 @@ BOT_EVENT_STATUS: dict[str, str | None] = {
 }
 
 # 参加できなかったことを示す sub_code に含まれる語（該当すれば「参加失敗」にする）
-# Recall.ai の sub_code の正確な一覧は docs/unverified-apis.md の確認項目
+# Recall.ai は sub_code を閉じた一覧として扱わないよう求めているので、語で判定する（docs/unverified-apis.md）
 JOIN_FAILURE_SUBCODE_HINTS: tuple[str, ...] = (
     "waiting_room",
     "noone_joined",
@@ -158,6 +158,16 @@ JOIN_FAILURE_SUBCODE_HINTS: tuple[str, ...] = (
     "invalid_meeting",
     "meeting_not_found",
     "password",
+    "bot_blocked",
+)
+
+# 上の語を含んでも参加失敗にしない sub_code（会議に入ったあとで終わったもの）。
+# 録音があれば、続く bot.done で共通処理がそのまま進む
+NOT_JOIN_FAILURE_SUBCODES: frozenset[str] = frozenset(
+    {
+        "bot_kicked_from_call",  # 会議の途中で参加者一覧から削除された
+        "timeout_exceeded_recording_permission_denied",  # 録音の拒否は bot.recording_permission_denied で「失敗」を書く
+    }
 )
 
 DEFAULT_FIELD_MAP = FieldMap()

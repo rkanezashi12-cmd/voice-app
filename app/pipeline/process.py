@@ -153,9 +153,11 @@ class ProcessRun:
             raise PermanentError("録音データがありません（会議に参加できなかった可能性があります）")
 
         if self.record_id and self.req.wait_count == 0:
-            await crm.update_record(
-                f.module, self.record_id, {f.status: s.transcribing, f.error_message: None}
-            )
+            progress = {f.status: s.transcribing, f.error_message: None}
+            await crm.update_record(f.module, self.record_id, progress)
+            if self.record is not None:
+                # 手元の状態も合わせる。前の「参加失敗」のままだと、この後の失敗を record_failure が書かなくなる
+                self.record = {**self.record, **progress}
 
         ctx = self._context()
         glossary = await self.rt.glossary.get(self.cs.client_id, crm, self.fm)
