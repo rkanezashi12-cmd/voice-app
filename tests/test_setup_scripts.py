@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from app.clients import ClientRegistry
+from tests.conftest import WEBHOOK_SECRET
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -49,3 +53,137 @@ def test_setup_recall_adds_recall_config_that_the_app_accepts() -> None:
     assert recall.transcription_mode == "async"
     assert recall.transcript_request == {"provider": {"recallai_async": {"language_code": "ja"}}}
     assert client.zoho is not None, "既存の zoho の設定は残す"
+
+
+# ---- setup_recall.sh を偽の gcloud で通しで動かす（2回目の実行で保存済みの値を使い回せること） ----
+
+FAKE_GCLOUD = r"""#!/usr/bin/env bash
+# 偽の gcloud：呼び出しを記録し、保存済みシークレットは $SIM/store/<名前> で表す
+printf '%q ' "$@" >> "$SIM/gcloud.log"; echo >> "$SIM/gcloud.log"
+case "$1 $2" in
+  "config set" | "secrets add-iam-policy-binding" | "logging read") exit 0 ;;
+  "secrets describe")
+    [ "$3" = recording-token-secret ] || [ -f "$SIM/store/$3" ] ;;
+  "secrets versions")
+    if [ "$3" = access ]; then
+      for a in "$@"; do case "$a" in --secret=*) cat "$SIM/store/${a#--secret=}" ;; esac; done
+    else
+      cat > "$SIM/store/$4"
+    fi ;;
+  "secrets create") cat > "$SIM/store/$3" ;;
+  "run services") [ "$3" != describe ] || cat "$SIM/service.json" ;;
+  *) echo "想定外の呼び出し: $*" >&2; exit 2 ;;
+esac
+"""
+
+# recall_check.py check-key だけ偽物にする（キーが good で始まれば使える）。ほかの python3 は本物を使う
+FAKE_PYTHON = """#!/usr/bin/env bash
+if [ "${1:-}" = scripts/recall_check.py ] && [ "${2:-}" = check-key ]; then
+  [[ "$RECALL_API_KEY" == good* ]]
+  exit
+fi
+exec "%s" "$@"
+"""
+
+
+@pytest.fixture
+def recall_sim(tmp_path: Path) -> Path:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (tmp_path / "store").mkdir()
+    for name, body in {
+        "gcloud": FAKE_GCLOUD,
+        "python3": FAKE_PYTHON % sys.executable,
+        "curl": '#!/usr/bin/env bash\necho \'{"status":"ok"}\'\n',
+        "sleep": "#!/usr/bin/env bash\nexit 0\n",
+    }.items():
+        path = bin_dir / name
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o755)
+    return tmp_path
+
+
+def _run_setup_recall(
+    sim: Path, answers: list[str], *, bot_name: str | None = None
+) -> subprocess.CompletedProcess:
+    clients: dict = {"clients": {"default": {"zoho": {"dc": "us"}}}}
+    if bot_name:
+        clients["clients"]["default"]["recall"] = {"bot_name": bot_name}
+    env = [
+        {"name": "CLIENTS_CONFIG_JSON", "value": json.dumps(clients)},
+        {"name": "SERVICE_URL", "value": "https://svc.example.run.app"},
+    ]
+    service = {"spec": {"template": {"spec": {"containers": [{"env": env}]}}}, "status": {"url": "https://x"}}
+    (sim / "service.json").write_text(json.dumps(service), encoding="utf-8")
+    (sim / "gcloud.log").write_text("", encoding="utf-8")
+    return subprocess.run(  # noqa: S603 リポジトリ内のスクリプトを偽の gcloud で実行する
+        ["bash", str(ROOT / "scripts" / "setup_recall.sh")],  # noqa: S607
+        input="".join(f"{a}\n" for a in answers),
+        env={**os.environ, "PATH": f"{sim / 'bin'}:{os.environ['PATH']}", "SIM": str(sim)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def _gcloud_calls(sim: Path) -> list[list[str]]:
+    lines = (sim / "gcloud.log").read_text(encoding="utf-8").splitlines()
+    return [shlex.split(line) for line in lines if line.strip()]
+
+
+def _saved(sim: Path) -> list[str]:
+    """値を書き込んだシークレット（versions add / create）の名前。"""
+    calls = _gcloud_calls(sim)
+    added = [c[3] for c in calls if c[:3] == ["secrets", "versions", "add"]]
+    return added + [c[2] for c in calls if c[:2] == ["secrets", "create"]]
+
+
+def _deployed_bot_name(sim: Path) -> str:
+    update = next(c for c in _gcloud_calls(sim) if c[:3] == ["run", "services", "update"])
+    arg = next(a for a in update if a.startswith("--update-env-vars="))
+    config = arg.split("CLIENTS_CONFIG_JSON=", 1)[1].split("@@RECALL_CONFIG_UPDATED_AT=", 1)[0]
+    return json.loads(config)["clients"]["default"]["recall"]["bot_name"]
+
+
+def test_setup_recall_first_run_saves_both_secrets(recall_sim: Path) -> None:
+    res = _run_setup_recall(
+        recall_sim, ["goodkey", WEBHOOK_SECRET, "マルサン木型 議事録（録音中）", "yes", ""]
+    )
+    assert res.returncode == 0, res.stderr
+    assert sorted(_saved(recall_sim)) == ["recall-api-key", "recall-webhook-secret"]
+    assert (recall_sim / "store" / "recall-api-key").read_text() == "goodkey"
+    assert _deployed_bot_name(recall_sim) == "マルサン木型 議事録（録音中）"
+    assert "手順2" in res.stdout, "次は CRM の関数とワークフロー（docs/recall-bot.md の手順2）"
+
+
+def test_setup_recall_rerun_reuses_stored_values_with_enter(recall_sim: Path) -> None:
+    """2回目は Enter だけで保存済みの API キー・シークレット・表示名を使い、シークレットを保存し直さない。"""
+    (recall_sim / "store" / "recall-api-key").write_text("goodstored")
+    (recall_sim / "store" / "recall-webhook-secret").write_text(WEBHOOK_SECRET)
+    res = _run_setup_recall(recall_sim, ["", "", "", "yes", ""], bot_name="マルサン木型 議事録（録音中）")
+    assert res.returncode == 0, res.stderr
+    assert _saved(recall_sim) == []
+    assert _deployed_bot_name(recall_sim) == "マルサン木型 議事録（録音中）"
+
+
+def test_setup_recall_saves_new_key_after_stored_key_fails(recall_sim: Path) -> None:
+    (recall_sim / "store" / "recall-api-key").write_text("revoked")
+    (recall_sim / "store" / "recall-webhook-secret").write_text(WEBHOOK_SECRET)
+    res = _run_setup_recall(recall_sim, ["", "goodnew", "", "", "yes", ""], bot_name="議事録ボット（録音中）")
+    assert res.returncode == 0, res.stderr
+    assert _saved(recall_sim) == ["recall-api-key"]
+    assert (recall_sim / "store" / "recall-api-key").read_text() == "goodnew"
+
+
+def test_setup_recall_saves_nothing_when_cancelled(recall_sim: Path) -> None:
+    res = _run_setup_recall(recall_sim, ["goodkey", WEBHOOK_SECRET, "", "no"])
+    assert res.returncode == 1
+    assert _saved(recall_sim) == []
+    assert not any(c[:3] == ["run", "services", "update"] for c in _gcloud_calls(recall_sim))
+
+
+def test_setup_recall_bot_name_prompt_allows_line_editing() -> None:
+    """表示名の入力で矢印キーが使えること（read -e）と、Ctrl+Z でスクリプトが止まらないこと（trap '' TSTP）。"""
+    text = (ROOT / "scripts" / "setup_recall.sh").read_text(encoding="utf-8")
+    assert "read -erp" in text
+    assert "trap '' TSTP" in text

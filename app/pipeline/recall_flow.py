@@ -3,8 +3,8 @@
 - bot.*（状態の変化）: 参加待ち・録音中・参加失敗・失敗を CRM に書く（field_map.BOT_EVENT_STATUS で決めたものだけ）。
   一時的な状態（参加待ち・録音中）は、古い通知（STATUS_EVENT_MAX_AGE_MINUTES より前）なら書かない。
 - bot.done: 共通処理を積む（ボット ID で名前を付け、二重に積まない）。
-- sdk_upload.complete: 共通処理を積む（デスクトップ方式）。
-- sdk_upload.failed: 失敗を記録する（レコードが無ければ作る）。
+- sdk_upload.complete（completed も受ける）: 共通処理を積む（デスクトップ方式）。
+- sdk_upload.failed: 失敗を記録する（レコードが無ければ作る。Recall.ai に無いアップロードなら作らない）。
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.client_services import ClientServices
-from app.field_map import BOT_EVENT_STATUS, JOIN_FAILURE_SUBCODE_HINTS
+from app.field_map import BOT_EVENT_STATUS, JOIN_FAILURE_SUBCODE_HINTS, NOT_JOIN_FAILURE_SUBCODES
 from app.logs import log_event
 from app.pipeline import formatting as fmt
 from app.pipeline.process import PROCESS_PATH, ProcessRequest, ProcessRun
@@ -24,13 +24,19 @@ from app.services.tasks import task_name
 logger = logging.getLogger(__name__)
 
 TRANSIENT_STATUSES = frozenset({"waiting", "recording", "joining"})
+# デスクトップ録音のアップロード完了。公式ドキュメントは complete、Recall.ai のブログは completed と書いているので両方受ける
+SDK_UPLOAD_COMPLETE_EVENTS = frozenset({"sdk_upload.complete", "sdk_upload.completed"})
 
 
 def bot_status_for(ev: RecallEvent) -> str | None:
     """ボットの状態通知から、CRM に書く状態（StatusValues の属性名）を決める。"""
     code = ev.status
     sub = (ev.sub_code or "").lower()
-    if code in ("fatal", "call_ended") and any(hint in sub for hint in JOIN_FAILURE_SUBCODE_HINTS):
+    if (
+        code in ("fatal", "call_ended")
+        and sub not in NOT_JOIN_FAILURE_SUBCODES
+        and any(hint in sub for hint in JOIN_FAILURE_SUBCODE_HINTS)
+    ):
         return "join_failed"
     return BOT_EVENT_STATUS.get(code)
 
@@ -46,7 +52,7 @@ def failure_message(ev: RecallEvent, attr: str) -> str:
 
 async def handle_recall_event(rt: Any, client_id: str, payload: dict[str, Any]) -> str:
     ev = parse_event(payload)
-    # 本文の形（docs/unverified-apis.md の H5）を実物で確かめるため、読み取れた ID の有無と項目名だけを残す
+    # 本文の形（docs/unverified-apis.md の H5。デスクトップは未確認）を確かめられるように、読み取れた ID の有無と項目名だけを残す
     data = payload.get("data")
     log_event(
         logger,
@@ -70,7 +76,7 @@ async def handle_recall_event(rt: Any, client_id: str, payload: dict[str, Any]) 
             )
             return "process_enqueued"
         return await _apply_bot_status(rt, cs, ev)
-    if ev.event == "sdk_upload.complete" and ev.sdk_upload_id:
+    if ev.event in SDK_UPLOAD_COMPLETE_EVENTS and ev.sdk_upload_id:
         req = ProcessRequest(
             client_id=client_id,
             source="recall_desktop",

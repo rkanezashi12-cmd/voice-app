@@ -66,6 +66,36 @@ def test_join_failure_is_detected_from_sub_code() -> None:
     assert bot_status_for(parse_event(bot_event("call_ended", sub_code="call_ended_by_host"))) is None
     assert bot_status_for(parse_event(bot_event("fatal", sub_code="unknown_error"))) == "failed"
     assert bot_status_for(parse_event(bot_event("joining_call"))) is None
+    assert (
+        bot_status_for(parse_event(bot_event("call_ended", sub_code="timeout_exceeded_noone_joined")))
+        == "join_failed"
+    )
+    assert (
+        bot_status_for(parse_event(bot_event("fatal", sub_code="google_meet_bot_blocked"))) == "join_failed"
+    )
+
+
+@pytest.mark.parametrize(
+    "sub_code",
+    [
+        "timeout_exceeded_everyone_left",  # 2026-10-01 の Google Meet のテストで実際に届いたもの
+        "bot_kicked_from_call",
+        "timeout_exceeded_recording_permission_denied",
+    ],
+)
+def test_call_ended_after_joining_is_not_join_failure(sub_code: str) -> None:
+    """会議に入ったあとで終わったもの。録音があれば共通処理が進むので、参加失敗と書かない。"""
+    assert bot_status_for(parse_event(bot_event("call_ended", sub_code=sub_code))) is None
+
+
+async def test_bot_removed_from_call_writes_nothing(runtime: Runtime, crm: FakeCrm) -> None:
+    assert (
+        await handle_recall_event(
+            runtime, "default", bot_event("call_ended", sub_code="bot_kicked_from_call")
+        )
+        == "ignored"
+    )
+    assert crm.writes == []
 
 
 async def test_waiting_room_and_recording_are_written(runtime: Runtime, crm: FakeCrm) -> None:
@@ -157,13 +187,30 @@ async def test_sdk_upload_complete_enqueues_desktop_processing(runtime: Runtime,
     )
 
 
-async def test_sdk_upload_failed_creates_failed_record(runtime: Runtime, crm: FakeCrm) -> None:
+async def test_sdk_upload_completed_is_also_accepted(runtime: Runtime, tasks: FakeTasks) -> None:
+    """公式ドキュメントは sdk_upload.complete、Recall.ai のブログは sdk_upload.completed。どちらでも処理を積む。"""
+    payload = {"event": "sdk_upload.completed", "data": {"sdk_upload": {"id": "u1"}}}
+    assert await handle_recall_event(runtime, "default", payload) == "process_enqueued"
+    assert tasks.enqueued[0]["payload"]["sdk_upload_id"] == "u1"
+
+
+async def test_sdk_upload_failed_creates_failed_record(
+    runtime: Runtime, crm: FakeCrm, recall: FakeRecall
+) -> None:
+    recall.uploads["u1"] = {"id": "u1", "metadata": {}}
     payload = {"event": "sdk_upload.failed", "data": {"sdk_upload": {"id": "u1"}}}
     assert await handle_recall_event(runtime, "default", payload) == "failure_recorded"
     kind, _, _, data = crm.writes[0]
     assert kind == "upsert"
     assert data[F.status] == S.failed
     assert data[F.recall_id] == "u1"
+
+
+async def test_sdk_upload_failed_for_unknown_upload_writes_nothing(runtime: Runtime, crm: FakeCrm) -> None:
+    """ダッシュボードのテスト送信（例の ID）では、CRM に失敗の記録を作らない。"""
+    payload = {"event": "sdk_upload.failed", "data": {"sdk_upload": {"id": "example-upload"}}}
+    assert await handle_recall_event(runtime, "default", payload) == "failure_recorded"
+    assert crm.writes == []
 
 
 def test_internal_endpoint_runs_the_handler(client: TestClient, crm: FakeCrm) -> None:

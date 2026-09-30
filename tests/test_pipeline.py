@@ -130,6 +130,22 @@ async def test_bot_without_recording_keeps_join_failed(
     assert crm.writes == [], "「参加失敗」を上書きしない"
 
 
+async def test_failure_after_join_failed_with_recording_is_written(
+    runtime: Runtime, crm: FakeCrm, recall: FakeRecall, llm: FakeLlm
+) -> None:
+    """「参加失敗」の後でも録音があれば処理する。その後の失敗は「文字起こし中」のまま残さず「失敗」と書く。"""
+    crm.add(F.module, "5001", meeting_record(**{F.status: S.join_failed}))
+    recall.add_bot("bot-1", "5001", transcript=RECALL_TRANSCRIPT)
+    llm.fail = ExternalServiceError("gemini", "quota", status=429, retryable=True)
+
+    outcome = await run_process(runtime, bot_request(), final_attempt=True)
+
+    assert outcome.status == "failed"
+    record = crm.record("5001")
+    assert record[F.status] == S.failed
+    assert "gemini" in record[F.error_message]
+
+
 # ---- 失敗時 ----
 
 
@@ -284,6 +300,17 @@ async def test_desktop_flow_creates_record_without_account(
     assert data[F.capture_method] == "デスクトップ"
     assert data[F.name].endswith("オンライン商談")
     assert recall.deleted_recordings == ["rec-9"]
+
+
+async def test_desktop_flow_for_unknown_upload_writes_nothing(runtime: Runtime, crm: FakeCrm) -> None:
+    """Recall.ai に無いアップロード（ダッシュボードのテスト送信の例など）では、CRM に記録を作らない。"""
+    outcome = await run_process(
+        runtime,
+        ProcessRequest(client_id="default", source="recall_desktop", sdk_upload_id="example-upload"),
+        final_attempt=True,
+    )
+    assert outcome.status == "failed"
+    assert crm.writes == []
 
 
 async def test_desktop_flow_updates_linked_record(runtime: Runtime, crm: FakeCrm, recall: FakeRecall) -> None:

@@ -2,7 +2,7 @@
 # Recall.ai のボット・録音の応答の「形」を表示する（Cloud Shell で実行する想定。読み取りだけ）。
 # バックエンド（Cloud Run）と同じ API キー・接続先を使う。値は ID・状態・日時・数値だけを出し、
 # 会議 URL・署名付き URL・参加者名・発言は出さない。
-# 未確認の仕様（docs/unverified-apis.md の H2〜H8）を実物の応答で確かめるときに使う。
+# 未確認の仕様（docs/unverified-apis.md）を実物の応答で確かめるときや、うまくいかないときの調査に使う。
 #
 #   cd ~/voice-app && bash scripts/recall_inspect.sh bot <ボット ID>        # 商談記録の「Recall ID」の値
 #   cd ~/voice-app && bash scripts/recall_inspect.sh recording <録音 ID>    # 上の表示の recordings[0].id

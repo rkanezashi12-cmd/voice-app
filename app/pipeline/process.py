@@ -20,7 +20,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from app.client_services import ClientServices
-from app.errors import AppError, PermanentError, TranscriptNotReady
+from app.errors import AppError, ExternalServiceError, PermanentError, TranscriptNotReady
 from app.logs import log_event
 from app.pipeline import formatting as fmt
 from app.pipeline.models import MeetingContext
@@ -153,9 +153,11 @@ class ProcessRun:
             raise PermanentError("録音データがありません（会議に参加できなかった可能性があります）")
 
         if self.record_id and self.req.wait_count == 0:
-            await crm.update_record(
-                f.module, self.record_id, {f.status: s.transcribing, f.error_message: None}
-            )
+            progress = {f.status: s.transcribing, f.error_message: None}
+            await crm.update_record(f.module, self.record_id, progress)
+            if self.record is not None:
+                # 手元の状態も合わせる。前の「参加失敗」のままだと、この後の失敗を record_failure が書かなくなる
+                self.record = {**self.record, **progress}
 
         ctx = self._context()
         glossary = await self.rt.glossary.get(self.cs.client_id, crm, self.fm)
@@ -270,6 +272,10 @@ class ProcessRun:
             await crm.update_record(f.module, self.record_id, {f.status: s.failed, f.error_message: text})
             return
         if self.req.source == "recall_desktop" and recall_id:
+            if not await self._sdk_upload_exists(recall_id):
+                # Recall.ai に無いアップロード（ダッシュボードのテスト送信の例など）。記録を作らない
+                self._log("recall.unknown_sdk_upload", logging.WARNING, sdk_upload_id=recall_id)
+                return
             data = {
                 f.name: fmt.record_name(self._context().meeting_date, None, self.fm),
                 f.recall_id: recall_id,
@@ -279,6 +285,18 @@ class ProcessRun:
                 f.error_message: text,
             }
             self.record_id, _ = await crm.upsert_record(f.module, data, [f.recall_id])
+
+    async def _sdk_upload_exists(self, upload_id: str) -> bool:
+        """Recall.ai にアップロードがあるか。400・404 のときだけ False（ほかの失敗は、失敗の記録を優先して True）。"""
+        if self.info.recall_id:
+            return True  # prepare() で取得できている
+        try:
+            await (await self.cs.recall()).get_sdk_upload(upload_id)
+        except ExternalServiceError as exc:
+            return exc.status not in (400, 404)
+        except AppError:
+            return True
+        return True
 
     async def _cleanup(self) -> ProcessOutcome | None:
         """音声を削除する。失敗したら再試行させる（次の試行は処理済みとして削除だけ行う）。"""

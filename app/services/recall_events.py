@@ -1,6 +1,6 @@
 """Recall.ai の Webhook 本文の読み取り。
 
-本文の形は公式ドキュメントを直接確認できていないため（docs/unverified-apis.md）、
+ボットの本文の形は 2026-10-01 に実物で確認した。デスクトップ（sdk_upload）の本文はまだ（docs/unverified-apis.md）。
 想定する形を1か所にまとめ、足りない情報は API で取り直せるように ID だけを確実に拾う。
 
 想定する形:

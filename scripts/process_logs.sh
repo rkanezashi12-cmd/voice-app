@@ -16,7 +16,7 @@ EVENTS=(
   bot.reserved recall.bot_created recall.bot_507_retry webhook.received webhook.ignored recall.event_parsed
   recall.status_written recall.status_stale recall.status_no_record recall.event_ignored recall_event.failed
   recall.transcript_requested pipeline.waiting_transcript recall.transcript_loaded recall.media_deleted
-  recall.recording_deleted
+  recall.recording_deleted recall.unknown_sdk_upload
   # 共通処理
   tasks.enqueued glossary.loaded pipeline.transcribed gemini.generated gemini.retry correct.rejected
   summarize.invalid_json dry_run.skip crm.updated gcs.deleted pipeline.finished pipeline.skipped_finished
