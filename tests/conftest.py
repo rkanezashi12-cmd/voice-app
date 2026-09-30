@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from app.clients import ClientConfig, ClientRegistry
 from app.config import Settings
 from app.deps import tasks_oidc
-from app.errors import AppError
+from app.errors import AppError, ExternalServiceError
 from app.field_map import FieldMap
 from app.main import create_app
 from app.recording_token import issue
@@ -246,6 +246,8 @@ class FakeRecall:
         return {"id": upload_id, "upload_token": "sdk-upload-token"}
 
     async def get_sdk_upload(self, upload_id: str) -> dict[str, Any]:
+        if upload_id not in self.uploads:
+            raise ExternalServiceError("recall", "デスクトップ録音の情報取得に失敗しました", status=404)
         return self.uploads[upload_id]
 
 

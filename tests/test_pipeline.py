@@ -302,6 +302,17 @@ async def test_desktop_flow_creates_record_without_account(
     assert recall.deleted_recordings == ["rec-9"]
 
 
+async def test_desktop_flow_for_unknown_upload_writes_nothing(runtime: Runtime, crm: FakeCrm) -> None:
+    """Recall.ai に無いアップロード（ダッシュボードのテスト送信の例など）では、CRM に記録を作らない。"""
+    outcome = await run_process(
+        runtime,
+        ProcessRequest(client_id="default", source="recall_desktop", sdk_upload_id="example-upload"),
+        final_attempt=True,
+    )
+    assert outcome.status == "failed"
+    assert crm.writes == []
+
+
 async def test_desktop_flow_updates_linked_record(runtime: Runtime, crm: FakeCrm, recall: FakeRecall) -> None:
     crm.add(F.module, "7001", {F.recall_id: "upload-1", F.status: S.transcribing, F.account: {"id": "a1"}})
     recall.uploads["upload-1"] = {"id": "upload-1", "metadata": {}, "recording": {"id": "rec-9"}}

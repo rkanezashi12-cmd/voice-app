@@ -187,13 +187,30 @@ async def test_sdk_upload_complete_enqueues_desktop_processing(runtime: Runtime,
     )
 
 
-async def test_sdk_upload_failed_creates_failed_record(runtime: Runtime, crm: FakeCrm) -> None:
+async def test_sdk_upload_completed_is_also_accepted(runtime: Runtime, tasks: FakeTasks) -> None:
+    """公式ドキュメントは sdk_upload.complete、Recall.ai のブログは sdk_upload.completed。どちらでも処理を積む。"""
+    payload = {"event": "sdk_upload.completed", "data": {"sdk_upload": {"id": "u1"}}}
+    assert await handle_recall_event(runtime, "default", payload) == "process_enqueued"
+    assert tasks.enqueued[0]["payload"]["sdk_upload_id"] == "u1"
+
+
+async def test_sdk_upload_failed_creates_failed_record(
+    runtime: Runtime, crm: FakeCrm, recall: FakeRecall
+) -> None:
+    recall.uploads["u1"] = {"id": "u1", "metadata": {}}
     payload = {"event": "sdk_upload.failed", "data": {"sdk_upload": {"id": "u1"}}}
     assert await handle_recall_event(runtime, "default", payload) == "failure_recorded"
     kind, _, _, data = crm.writes[0]
     assert kind == "upsert"
     assert data[F.status] == S.failed
     assert data[F.recall_id] == "u1"
+
+
+async def test_sdk_upload_failed_for_unknown_upload_writes_nothing(runtime: Runtime, crm: FakeCrm) -> None:
+    """ダッシュボードのテスト送信（例の ID）では、CRM に失敗の記録を作らない。"""
+    payload = {"event": "sdk_upload.failed", "data": {"sdk_upload": {"id": "example-upload"}}}
+    assert await handle_recall_event(runtime, "default", payload) == "failure_recorded"
+    assert crm.writes == []
 
 
 def test_internal_endpoint_runs_the_handler(client: TestClient, crm: FakeCrm) -> None:

@@ -3,8 +3,8 @@
 - bot.*（状態の変化）: 参加待ち・録音中・参加失敗・失敗を CRM に書く（field_map.BOT_EVENT_STATUS で決めたものだけ）。
   一時的な状態（参加待ち・録音中）は、古い通知（STATUS_EVENT_MAX_AGE_MINUTES より前）なら書かない。
 - bot.done: 共通処理を積む（ボット ID で名前を付け、二重に積まない）。
-- sdk_upload.complete: 共通処理を積む（デスクトップ方式）。
-- sdk_upload.failed: 失敗を記録する（レコードが無ければ作る）。
+- sdk_upload.complete（completed も受ける）: 共通処理を積む（デスクトップ方式）。
+- sdk_upload.failed: 失敗を記録する（レコードが無ければ作る。Recall.ai に無いアップロードなら作らない）。
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ from app.services.tasks import task_name
 logger = logging.getLogger(__name__)
 
 TRANSIENT_STATUSES = frozenset({"waiting", "recording", "joining"})
+# デスクトップ録音のアップロード完了。公式ドキュメントは complete、Recall.ai のブログは completed と書いているので両方受ける
+SDK_UPLOAD_COMPLETE_EVENTS = frozenset({"sdk_upload.complete", "sdk_upload.completed"})
 
 
 def bot_status_for(ev: RecallEvent) -> str | None:
@@ -74,7 +76,7 @@ async def handle_recall_event(rt: Any, client_id: str, payload: dict[str, Any]) 
             )
             return "process_enqueued"
         return await _apply_bot_status(rt, cs, ev)
-    if ev.event == "sdk_upload.complete" and ev.sdk_upload_id:
+    if ev.event in SDK_UPLOAD_COMPLETE_EVENTS and ev.sdk_upload_id:
         req = ProcessRequest(
             client_id=client_id,
             source="recall_desktop",
