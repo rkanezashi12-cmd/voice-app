@@ -50,7 +50,6 @@ H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
 | D3 | 変数が無い・空のときの `zoho.crm.getOrgVariable` | null か空文字（どちらでも止まるようにしてある） | `crm/issue_recording_url.dg` |
-| D4 | `zoho.crm.getRecordById` で読んだ日時項目（開始日時）の値の形 | タイムゾーンつきの文字列（`2026-10-01T10:00:00+09:00`）。バックエンドはタイムゾーンつきだけを受け付ける（違えば応答 422） | `crm/create_bot.dg`, `crm/issue_recording_url.dg` |
 | D5 | ボット予約の関数（`create_bot.dg`）全体 | 本番で動いた `issue_recording_url.dg` と同じ書き方。本番ではまだ動かしていない | `crm/create_bot.dg` |
 
 確認済み（2026-09-29、マルサン木型の本番組織でワークフローから実行。バックエンドは応答 200 で録音用URLを発行）：
@@ -61,6 +60,12 @@ H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md
   （`.toString().toMap()` で読める）
 - ワークフローの関数の引数 `rec_id`（文字列）に「商談記録 Id」を割り当てると、レコード ID が文字列で届く
 - `zoho.crm.getOrgVariable("<API 名>")` は、値がある変数ならその値を返す
+
+確認済み（2026-09-30 日本時間、開始日時ありの商談記録で録音用URLを発行）：
+
+- D4 `zoho.crm.getRecordById` で読んだ日時項目（開始日時）を `toString()` してバックエンドに渡すと、タイムゾーン込みの正しい時刻として読めた。
+  開始日時 2026/9/30 18:00 の記録で、録音用URLの有効期限が 2026/10/1 18:00（日本時間。開始日時＋24時間）になった
+  （Cloud Run の時刻は UTC なので、オフセットが無ければ9時間ずれる）
 
 ## 優先度：中（動くが挙動が変わる）
 
@@ -86,3 +91,5 @@ H2〜H7・H9・H10（Recall.ai）の確かめ方：[recall-bot.md](recall-bot.md
 
 - iPhone の Safari の録音形式（`audio/mp4` の見込み）、Wake Lock、画面ロック・着信時の挙動
 - Zoho CRM アプリのリンクから開いたとき（アプリ内ブラウザ）にマイクが使えるか
+  - 2026-09-30：iPhone の Zoho CRM アプリから開いた録音ページでは録音できず、URL を Chrome に貼り直して録音できた。
+    PC の CRM（Chrome）からは、録音用URLをそのまま開けた
