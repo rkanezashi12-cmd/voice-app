@@ -61,11 +61,30 @@ bash scripts/setup_app_login.sh
 
 1. Zoho の API コンソール（US は `https://api-console.zoho.com`）で「ADD CLIENT」→「Server-based Applications」を選び、
    スクリプトが表示する値で作る（Client Name・Homepage URL・Authorized Redirect URIs）。
-   「Client Secret」タブの Client ID と Client Secret を貼る
+   「Client Secret」タブの Client ID と Client Secret を貼る（画面には出ない）
+   - 貼り付けられるのは最後にコピーした1つだけ。「Client ID をコピー → 貼る → Client Secret をコピー → 貼る」の順に進める
+     （スクリプトを動かすコマンドをコピーしたあとは、Client ID をコピーし直す）
+   - **Cloud Shell では Ctrl+C を押さない**（コピーではなく中止になる）。止まったら何も保存されていないので、
+     ↑ キー → Enter でやり直す。止まったあとの `$` の行に Client ID や Client Secret を貼ると、ふつうのコマンドとして
+     画面と履歴に残る（「command not found」と出る）。そのときは下の「画面に出てしまったとき」で作り直す
 2. ログインの Cookie の署名鍵を作る（初回だけ）
-3. GPS の候補を使うか（`yes` で Google Geocoding API を有効にし、Geocoding API だけに使える API キーを作る）
-4. `yes` で Secret Manager に保存し、Cloud Run の設定に `app` を足す（ほかの設定・`DRY_RUN` は変えない）
-5. 録音アプリの URL が表示される（`https://<サービス>/app/`）
+3. GPS の候補を使うか（`yes` で Google Geocoding API を有効にする。2回目からは、今のキーを使い続けるか作り直すかを聞く）
+4. `yes` で、Geocoding API だけに使える API キーを作り（値は画面に出さない）、Secret Manager に保存して、
+   Cloud Run の設定に `app` を足す（ほかの設定・`DRY_RUN` は変えない）。キーを作り直したときは、切り替わったあとで
+   古いキーを削除する。`no` なら何も作らず、何も保存しない
+5. 録音アプリの URL が表示される（`https://<サービス>/app/`）。途中で gcloud が出す `…<数字>.asia-northeast1.run.app`
+   の URL も同じサービスだが、ログインはこのスクリプトが出す URL でしか通らない（Zoho に登録した戻り先の URL のため）
+
+### 画面に出てしまったとき（キーや Client Secret の作り直し）
+
+画面写真やコマンドの履歴に残った値は、作り直して古い値を使えなくする。
+
+- **地図の API キー**（`AIza…`）：`bash scripts/setup_app_login.sh` を実行し、Client ID・Client Secret は Enter、
+  GPS は `yes`、「作り直すなら yes」に `yes`、保存に `yes`。新しいキーを作って Cloud Run を切り替えてから、古いキーを削除する
+  （古いキーは30日以内なら `gcloud services api-keys undelete <ID>` で戻せる）。このキーは Geocoding API にしか使えないので、
+  悪用されても住所検索の料金がかかるだけ
+- **Zoho の Client Secret**：API コンソールでそのクライアントを開き、Secret を作り直す（見当たらなければクライアントを削除して、
+  同じ値で作り直す。この場合は Client ID も変わる）。スクリプトを実行し、変わった値だけ貼る（変わっていないほうは Enter）
 
 ## 2. 使ってみる（スマホ、10分）
 
@@ -81,6 +100,9 @@ bash scripts/setup_app_login.sh
 | 症状 | 原因と対処 |
 |---|---|
 | 「このクライアントでは録音アプリを使えません」 | `setup_app_login.sh` をまだ実行していない（Cloud Run の設定に `app` が無い） |
+| スクリプトで「Client ID の形ではありません」が続く | 最後にコピーしたもの（スクリプトを動かすコマンドなど）が貼られている。Zoho の画面で Client ID をコピーし直して貼る |
+| スクリプトが止まり、貼った値に「command not found」 | Ctrl+C でスクリプトが止まっていた（何も保存されていない）。↑ キー → Enter でやり直し、貼った Client Secret は作り直す（上の「画面に出てしまったとき」） |
+| 最初のログインで「ログインの途中で時間が過ぎました」と出る（もう一度押すと通る） | `…<数字>.asia-northeast1.run.app` の URL で開いた（Zoho から戻るのはスクリプトが出した URL のほう）。スクリプトが出した URL をブックマークして使う |
 | Zoho の画面で「Invalid Redirect Uri」 | API コンソールのクライアントの Authorized Redirect URIs が違う。スクリプトが表示した `…/auth/callback` と同じにする |
 | 「この CRM のユーザーではありません」 | 別の会社・別の DC の Zoho アカウントでログインした。会社の CRM のアカウントでログインし直す |
 | 「API の利用（Zoho CRM API Access）が許可されていません」 | CRM のプロファイルの権限。管理者が 設定 → セキュリティ管理 → プロファイル で「Zoho CRM API Access」を許可する |

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -58,8 +61,10 @@ def test_setup_recall_adds_recall_config_that_the_app_accepts() -> None:
 # ---- setup_recall.sh を偽の gcloud で通しで動かす（2回目の実行で保存済みの値を使い回せること） ----
 
 FAKE_GCLOUD = r"""#!/usr/bin/env bash
-# 偽の gcloud：呼び出しを記録し、保存済みシークレットは $SIM/store/<名前> で表す
+# 偽の gcloud：呼び出しを記録し、保存済みシークレットは $SIM/store/<名前>、
+# 地図の API キーは $SIM/store/apikey-<ID>（中身は作った日時）で表す
 printf '%q ' "$@" >> "$SIM/gcloud.log"; echo >> "$SIM/gcloud.log"
+fake_key() { echo "AIzaSyFake_${1//-/_}"; }
 case "$1 $2" in
   "config set" | "secrets add-iam-policy-binding" | "logging read") exit 0 ;;
   "secrets describe")
@@ -75,9 +80,19 @@ case "$1 $2" in
   "services enable") exit 0 ;;
   "services api-keys")
     case "$3" in
-      describe) [ -f "$SIM/store/apikey-$4" ] ;;
-      create) for a in "$@"; do case "$a" in --key-id=*) touch "$SIM/store/apikey-${a#--key-id=}" ;; esac; done ;;
-      get-key-string) echo "AIzaFakeGeocodingKey" ;;
+      list)
+        for f in "$SIM"/store/apikey-*; do
+          [ -e "$f" ] || continue
+          printf '%s\tprojects/123/locations/global/keys/%s\n' "$(cat "$f")" "${f##*/apikey-}"
+        done ;;
+      create)
+        for a in "$@"; do case "$a" in --key-id=*) id="${a#--key-id=}" ;; esac; done
+        date -u +%Y-%m-%dT%H:%M:%S.%NZ > "$SIM/store/apikey-$id"
+        # 本物の gcloud と同じく、作った結果（キーの値を含む）を標準エラーに出す
+        printf 'Operation [operations/akmf.p7-1] complete. Result: {\n    "keyString":"%s",\n}\n' "$(fake_key "$id")" >&2 ;;
+      get-key-string) fake_key "$4" ;;
+      delete) rm "$SIM/store/apikey-$4" ;;
+      *) echo "想定外の呼び出し: $*" >&2; exit 2 ;;
     esac ;;
   *) echo "想定外の呼び出し: $*" >&2; exit 2 ;;
 esac
@@ -119,7 +134,8 @@ def _run_setup_recall(
     return _run_script(sim, "setup_recall.sh", answers, clients)
 
 
-def _run_script(sim: Path, script: str, answers: list[str], clients: dict) -> subprocess.CompletedProcess:
+def _prepare(sim: Path, clients: dict) -> dict[str, str]:
+    """偽の Cloud Run のサービスを置き、偽の gcloud を先に見つける環境変数を返す。"""
     env = [
         {"name": "CLIENTS_CONFIG_JSON", "value": json.dumps(clients)},
         {"name": "SERVICE_URL", "value": "https://svc.example.run.app"},
@@ -127,13 +143,29 @@ def _run_script(sim: Path, script: str, answers: list[str], clients: dict) -> su
     service = {"spec": {"template": {"spec": {"containers": [{"env": env}]}}}, "status": {"url": "https://x"}}
     (sim / "service.json").write_text(json.dumps(service), encoding="utf-8")
     (sim / "gcloud.log").write_text("", encoding="utf-8")
+    return {**os.environ, "PATH": f"{sim / 'bin'}:{os.environ['PATH']}", "SIM": str(sim)}
+
+
+def _run_script(sim: Path, script: str, answers: list[str], clients: dict) -> subprocess.CompletedProcess:
     return subprocess.run(  # noqa: S603 リポジトリ内のスクリプトを偽の gcloud で実行する
         ["bash", str(ROOT / "scripts" / script)],  # noqa: S607
         input="".join(f"{a}\n" for a in answers),
-        env={**os.environ, "PATH": f"{sim / 'bin'}:{os.environ['PATH']}", "SIM": str(sim)},
+        env=_prepare(sim, clients),
         capture_output=True,
         text=True,
         timeout=60,
+    )
+
+
+def _start_script(sim: Path, script: str, clients: dict) -> subprocess.Popen[str]:
+    """入力を渡さずに動かし始める（途中で Ctrl+C を送るテスト用）。"""
+    return subprocess.Popen(  # noqa: S603 リポジトリ内のスクリプトを偽の gcloud で実行する
+        ["bash", str(ROOT / "scripts" / script)],  # noqa: S607
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=_prepare(sim, clients),
     )
 
 
@@ -205,6 +237,32 @@ def test_setup_recall_bot_name_prompt_allows_line_editing() -> None:
 
 # ---- setup_app_login.sh（録音アプリのログインと GPS の候補） ----
 
+OLD_KEY_CREATED = "2026-01-01T00:00:00.000000Z"
+
+
+def fake_maps_key(key_id: str) -> str:
+    """偽の gcloud が返す地図の API キーの値（本物と同じく AIza で始まる）。"""
+    return "AIzaSyFake_" + key_id.replace("-", "_")
+
+
+def _maps_keys(sim: Path) -> list[str]:
+    """残っている（削除していない）地図の API キーの ID。"""
+    return sorted(p.name.removeprefix("apikey-") for p in (sim / "store").glob("apikey-*"))
+
+
+def _stored_app_login(sim: Path, *, maps_key: str | None) -> dict:
+    """2回目の実行の前提：クライアント・署名鍵（と地図のキー）は保存済み。"""
+    values = {
+        "app-login-client-id": "1000.LOGINID",
+        "app-login-client-secret": "login-secret",
+        "app-session-secret": "s" * 64,
+    }
+    if maps_key is not None:
+        values["app-maps-api-key"] = maps_key
+    for name, value in values.items():
+        (sim / "store" / name).write_text(value)
+    return {"clients": {"default": {"zoho": {"dc": "us"}, "app": {}}}}
+
 
 def test_setup_app_login_adds_app_config_that_the_app_accepts() -> None:
     current = json.loads((ROOT / "config" / "clients.example.json").read_text(encoding="utf-8"))
@@ -241,10 +299,12 @@ def test_setup_app_login_first_run_with_gps(recall_sim: Path) -> None:
         "app-session-secret",
     ]
     store = recall_sim / "store"
-    assert (store / "app-maps-api-key").read_text() == "AIzaFakeGeocodingKey"
+    (key_id,) = _maps_keys(recall_sim)
+    assert re.fullmatch(r"app-geocoding-\d{14}", key_id), "キーの ID には作った日時を付ける"
+    assert (store / "app-maps-api-key").read_text() == fake_maps_key(key_id)
     assert len((store / "app-session-secret").read_text()) >= 40
     assert "https://svc.example.run.app/auth/callback" in res.stdout, "API コンソールに登録する URL を出す"
-    assert "AIzaFakeGeocodingKey" not in res.stdout, "API キーは画面に出さない"
+    assert "AIza" not in res.stdout + res.stderr, "API キーは画面に出さない（gcloud が出す作成結果も捨てる）"
     app = _deployed_config(recall_sim)["clients"]["default"]["app"]
     assert app["maps_api_key"].endswith("/app-maps-api-key/versions/latest")
     assert "https://svc.example.run.app/app/" in res.stdout
@@ -272,3 +332,114 @@ def test_setup_app_login_needs_zoho_connection(recall_sim: Path) -> None:
     res = _run_script(recall_sim, "setup_app_login.sh", [], {"clients": {"default": {}}})
     assert res.returncode == 1
     assert "zoho がありません" in res.stderr
+
+
+def test_setup_app_login_rotates_maps_key_after_switching(recall_sim: Path) -> None:
+    """画面に出てしまったキーは作り直せる。新しいキーを保存して Cloud Run を切り替えてから、古いキーを削除する。"""
+    clients = _stored_app_login(recall_sim, maps_key=fake_maps_key("app-geocoding"))
+    (recall_sim / "store" / "apikey-app-geocoding").write_text(OLD_KEY_CREATED)
+    res = _run_script(recall_sim, "setup_app_login.sh", ["", "", "yes", "yes", "yes"], clients)
+    assert res.returncode == 0, res.stderr
+    (new_id,) = _maps_keys(recall_sim)
+    assert new_id.startswith("app-geocoding-"), "古いキーは削除し、新しいキーだけが残る"
+    assert _saved(recall_sim) == ["app-maps-api-key"], "ログインの設定は保存し直さない"
+    assert (recall_sim / "store" / "app-maps-api-key").read_text() == fake_maps_key(new_id)
+    calls = _gcloud_calls(recall_sim)
+    update = next(i for i, c in enumerate(calls) if c[:3] == ["run", "services", "update"])
+    delete = next(i for i, c in enumerate(calls) if c[:3] == ["services", "api-keys", "delete"])
+    assert calls[delete][3] == "app-geocoding"
+    assert update < delete, "Cloud Run が新しいキーに切り替わってから、古いキーを削除する"
+    assert "古い API キー app-geocoding を削除しました" in res.stdout
+    assert "AIza" not in res.stdout + res.stderr, "新しいキーも古いキーも画面に出さない"
+
+
+def test_setup_app_login_keeps_maps_key_without_saving_again(recall_sim: Path) -> None:
+    clients = _stored_app_login(recall_sim, maps_key=fake_maps_key("app-geocoding"))
+    (recall_sim / "store" / "apikey-app-geocoding").write_text(OLD_KEY_CREATED)
+    res = _run_script(recall_sim, "setup_app_login.sh", ["", "", "yes", "no", "yes"], clients)
+    assert res.returncode == 0, res.stderr
+    assert _maps_keys(recall_sim) == ["app-geocoding"]
+    assert _saved(recall_sim) == [], "保存済みと同じキーは保存し直さない"
+    calls = _gcloud_calls(recall_sim)
+    assert not any(
+        c[:3] in (["services", "api-keys", "create"], ["services", "api-keys", "delete"]) for c in calls
+    )
+    assert _deployed_config(recall_sim)["clients"]["default"]["app"]["maps_api_key"].endswith(
+        "/app-maps-api-key/versions/latest"
+    )
+
+
+def test_setup_app_login_saves_existing_key_that_was_not_saved(recall_sim: Path) -> None:
+    """キーはあるのに保存されていない場合（前の版のスクリプトで手順4をやめたなど）：作り直さずにそのキーを保存する。"""
+    clients = _stored_app_login(recall_sim, maps_key=None)
+    (recall_sim / "store" / "apikey-app-geocoding").write_text(OLD_KEY_CREATED)
+    res = _run_script(recall_sim, "setup_app_login.sh", ["", "", "yes", "no", "yes"], clients)
+    assert res.returncode == 0, res.stderr
+    assert _saved(recall_sim) == ["app-maps-api-key"]
+    assert (recall_sim / "store" / "app-maps-api-key").read_text() == fake_maps_key("app-geocoding")
+
+
+def test_setup_app_login_cancel_creates_no_key(recall_sim: Path) -> None:
+    """手順4で no と答えたら、API キーも作らない（キーを作るのは yes のあと）。"""
+    answers = ["1000.LOGINID", "login-secret", "yes", "no"]
+    res = _run_script(
+        recall_sim, "setup_app_login.sh", answers, {"clients": {"default": {"zoho": {"dc": "us"}}}}
+    )
+    assert res.returncode == 1
+    assert "API キーも作っていません" in res.stderr
+    assert _maps_keys(recall_sim) == []
+    assert _saved(recall_sim) == []
+    assert not any(c[:3] == ["run", "services", "update"] for c in _gcloud_calls(recall_sim))
+
+
+def test_setup_app_login_explains_wrong_pastes_without_showing_them(recall_sim: Path) -> None:
+    """コピーし直さずに貼った（コマンドが入っていた）、Client Secret と Client ID を取り違えた、を知らせる。値は出さない。"""
+    secret = "0123456789abcdef" * 2 + "0123456789"
+    answers = [
+        "cd ~/voice-app && bash scripts/setup_app_login.sh",
+        secret,
+        "1000.LOGINID",
+        "1000.LOGINID",
+        secret,
+        "no",
+        "yes",
+    ]
+    res = _run_script(
+        recall_sim, "setup_app_login.sh", answers, {"clients": {"default": {"zoho": {"dc": "us"}}}}
+    )
+    assert res.returncode == 0, res.stderr
+    assert "コマンドなど" in res.stdout
+    assert "Client Secret が貼られたようです" in res.stdout
+    assert "Client ID がもう一度貼られたようです" in res.stdout
+    assert secret not in res.stdout + res.stderr
+    store = recall_sim / "store"
+    assert (store / "app-login-client-id").read_text() == "1000.LOGINID"
+    assert (store / "app-login-client-secret").read_text() == secret
+
+
+def test_setup_app_login_strips_bracketed_paste_markers(recall_sim: Path) -> None:
+    answers = ["\x1b[200~1000.LOGINID\x1b[201~", "\x1b[200~login-secret\x1b[201~", "no", "yes"]
+    res = _run_script(
+        recall_sim, "setup_app_login.sh", answers, {"clients": {"default": {"zoho": {"dc": "us"}}}}
+    )
+    assert res.returncode == 0, res.stderr
+    store = recall_sim / "store"
+    assert (store / "app-login-client-id").read_text() == "1000.LOGINID"
+    assert (store / "app-login-client-secret").read_text() == "login-secret"
+
+
+def test_setup_app_login_ctrl_c_says_nothing_was_saved(recall_sim: Path) -> None:
+    """Ctrl+C（コピーのつもりで押しがち）で止まったら、何も保存していないことと、続けて貼らないことを伝える。"""
+    proc = _start_script(recall_sim, "setup_app_login.sh", {"clients": {"default": {"zoho": {"dc": "us"}}}})
+    log = recall_sim / "gcloud.log"
+    deadline = time.monotonic() + 30
+    while "app-login-client-secret" not in log.read_text(encoding="utf-8"):
+        assert time.monotonic() < deadline, "Client ID を聞くところまで進まない"
+        time.sleep(0.05)
+    time.sleep(0.3)  # Client ID の入力を待つところまで進める
+    proc.send_signal(signal.SIGINT)
+    _, err = proc.communicate(timeout=30)
+    assert proc.returncode == 130
+    assert "何も保存していません" in err
+    assert "Client ID や Client Secret を貼らないでください" in err
+    assert _saved(recall_sim) == []
