@@ -589,9 +589,22 @@ async function drainAndComplete(allowMissing) {
 
 // ---- 初期化 ----
 
-function readToken() {
+// "#<トークン>" か "#t=<トークン>"。録音アプリ（/app/）から開いたときは "#t=<トークン>&app=1"
+function readHash() {
   const hash = window.location.hash.replace(/^#/, "");
-  return hash.startsWith("t=") ? hash.slice(2) : hash;
+  if (!hash.startsWith("t=")) return { token: hash, fromApp: false };
+  const params = new URLSearchParams(hash);
+  return { token: params.get("t") || "", fromApp: params.get("app") === "1" };
+}
+
+// 録音アプリから開いたときは、アプリと同じ下のタブ（入力・録音・日報）と「日報を見る」を出す
+function setupAppNav() {
+  const report = `/app/#report=${encodeURIComponent(state.recordId)}`;
+  $("app-tab-report").href = report;
+  $("btn-report").href = report;
+  show("app-nav", true);
+  show("btn-report", true);
+  document.body.classList.add("from-app");
 }
 
 function recordIdFromToken(token) {
@@ -751,8 +764,10 @@ async function init() {
     );
     return;
   }
-  state.token = readToken();
+  const { token, fromApp } = readHash();
+  state.token = token;
   state.recordId = recordIdFromToken(state.token);
+  if (fromApp && state.recordId) setupAppNav();
   if (!state.token || !state.recordId) {
     showError("URL が正しくありません", "CRM の商談記録にある録音用リンクから開いてください。");
     return;

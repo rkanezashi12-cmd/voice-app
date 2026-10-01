@@ -64,6 +64,7 @@
       <section id="view-done" class="card" hidden>
         <h2>送信が完了しました</h2>
         <p id="done-message">文字起こしと要約を始めます。この画面は閉じてかまいません。</p>
+        <a id="btn-report" class="button primary" href="/app/" hidden>日報を見る</a>
       </section>
 
       <details id="test-panel" class="test-panel" hidden>
@@ -90,6 +91,12 @@
         <button id="btn-overlay-finish" type="button" class="secondary">録音を終える</button>
       </div>
     </div>
+
+    <nav id="app-nav" class="app-nav" aria-label="画面" hidden>
+      <a href="/app/#input">入力</a>
+      <span class="active" aria-current="page">録音</span>
+      <a id="app-tab-report" href="/app/#report">日報</a>
+    </nav>
 
     <script type="module" src="app.js"></script>
   </body>

@@ -61,13 +61,22 @@ class GlossaryFields(_Frozen):
 
 
 class StandardFields(_Frozen):
-    """標準モジュール（取引先候補の検索に使う）。"""
+    """標準モジュール（取引先候補・訪問先の検索に使う。読み取りだけ）。"""
 
     contacts_module: str = "Contacts"
     contact_full_name: str = "Full_Name"
     contact_email: str = "Email"
     contact_account: str = "Account_Name"
+    contact_last_name: str = "Last_Name"
+    contact_first_name: str = "First_Name"
+    contact_department: str = "Department"
+    contact_title: str = "Title"
+    accounts_module: str = "Accounts"
     account_name: str = "Account_Name"
+    # 住所（録音アプリの検索と、GPS の候補に使う）
+    account_state: str = "Billing_State"
+    account_city: str = "Billing_City"
+    account_street: str = "Billing_Street"
 
 
 class StatusValues(_Frozen):

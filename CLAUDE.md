@@ -12,9 +12,10 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
   （既定 US：`accounts.zoho.com` / `www.zohoapis.com`。デモ環境のお客様 CRM は US DC）
   - スマホは Zoho CRM 公式アプリ、PC は CRM ウィジェット（別フェーズ）
 - オンライン会議は **Recall.ai 東京リージョン** `https://ap-northeast-1.recall.ai`。会議ボットは自作しない
-  - お客様の本番は **Desktop Recording SDK**（ボットを会議に入れない）が標準
-  - Meeting Bot API は社内デモ・検証用と、デスクトップアプリを入れられない場合の予備
+  - **オンライン商談は CRM から呼ぶボット（Meeting Bot API、入口A）で行う**（2026-10-01 のユーザーの判断）
+  - Desktop Recording SDK（入口C。ボットを会議に入れない）は保留。バックエンドの受け口は実装済み
 - 対面商談は Cloud Run が配信する録音 Web ページ（スマホのブラウザ）。ネイティブアプリは作らない
+  - CRM の録音用URLから開く方法と、録音アプリ（`/app/`。Zoho アカウントでログインし、訪問先・担当者を選ぶ）から開く方法がある
 - バックエンドは **Cloud Run（asia-northeast1）/ Python 3.12 / FastAPI**
 - AI は **Vertex AI の Gemini、リージョナルエンドポイント asia-northeast1**。global エンドポイントは使わない
 - 文字起こし全文は **CRM の「商談記録」** の `transcript` / `transcript_2`（各 32,000 文字）に保存する。
@@ -58,6 +59,10 @@ ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ, ZohoCRM.org.READ
 
 `ZohoCRM.org.READ` は接続先の組織の確認に使う（読み取りのみ）。発行・保存は `scripts/setup_zoho_connection.sh`（手順は docs/zoho-connection.md）。
 
+録音アプリのログインは別のクライアント（API コンソールの Server-based Applications）で、スコープは
+`ZohoCRM.users.READ, ZohoCRM.org.READ` だけ（`access_type=online`）。受け取ったトークンは本人の確認に1回使って捨て、
+保存しない。CRM の検索・書き込みは上のバックエンドの接続で行う（設定は `scripts/setup_app_login.sh`、手順は docs/visit-app.md）。
+
 ## 3. 処理の流れ
 
 入口ごとに「文字起こしテキストを得る」までを担当し、以降は共通処理（`app/pipeline/`）に合流する。
@@ -66,6 +71,7 @@ ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ, ZohoCRM.org.READ
 |---|---|---|---|
 | A ボット | CRM ワークフロー → `POST /api/bots` | Recall.ai（話者名つき） | Recall `delete_media` |
 | B 対面録音 | CRM ワークフロー → `POST /api/recordings` → 録音ページ | Gemini（話者A/B） | GCS のオブジェクト削除 |
+| B 録音アプリ | `/app/`（Zoho でログイン）→ `POST /api/app/visits`（商談記録を作る）→ 録音ページ | 同上 | 同上 |
 | C デスクトップ | アプリ → `POST /api/desktop/upload-token` | Recall.ai（話者名つき） | Recall の録音削除 |
 | D モバイル SDK | 未提供。`app/pipeline/sources.py` にソースを1つ足す | — | — |
 
@@ -82,10 +88,12 @@ app/main.py            FastAPI アプリ
 app/config.py          環境変数（pydantic-settings）
 app/clients.py         クライアント（テナント）単位の設定と秘密情報の解決
 app/field_map.py       CRM の API 名・選択肢の値（実物に合わせてここだけ直す）
-app/routers/           bots / desktop / recordings / webhooks / internal
-app/services/          zoho_auth / crm / recall / gemini / tasks / storage / audio
+app/routers/           bots / desktop / recordings / webhooks / internal / app_auth・app_api（録音アプリ）
+app/services/          zoho_auth / crm / recall / gemini / tasks / storage / audio / zoho_login / geocoding
+app/visits.py          録音アプリの訪問先の検索と商談記録の作成（app/web_session.py はログインの Cookie）
 app/pipeline/          共通処理（入口非依存）
 web/recorder/          対面録音ページ（素の HTML/JS。ビルド不要）
+web/app/               録音アプリ（Zoho でログイン・訪問先と担当者の選択・GPS の候補・日報。素の HTML/JS）
 prompts/               transcribe.md / correct.md / summarize.md / schema.json
 crm/                   Deluge 関数の保管場所
 desktop/ widgets/      Phase 2 / 3
@@ -100,4 +108,5 @@ ruff check . && ruff format --check .
 pytest
 node --test tests/js/*.test.mjs            # 録音ページの純粋ロジック
 node tests/e2e/recorder.e2e.mjs            # Chromium の擬似マイクで録音ページを通しで確認
+node tests/e2e/app.e2e.mjs                 # 録音アプリ（/app/）を通しで確認（SCREENSHOT_DIR で画面も残せる）
 ```

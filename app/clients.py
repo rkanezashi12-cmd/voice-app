@@ -96,6 +96,26 @@ class RecallConfig(_Model):
         return _check_ref(value)
 
 
+class AppConfig(_Model):
+    """営業向けの録音アプリ（/app/）。営業は Zoho アカウントでログインする（docs/visit-app.md）。"""
+
+    # Zoho の API コンソールで作った「サーバーベースのアプリケーション」のクライアント。
+    # ログインした人の確認（CRM のユーザーか）だけに使い、トークンは保存しない
+    login_client_id: str
+    login_client_secret: str
+    # ログインの Cookie と、ログイン途中の state の署名鍵
+    session_secret: str
+    # ログインを保つ時間
+    session_hours: int = Field(default=12, ge=1, le=168)
+    # GPS の位置から住所を調べる Google Geocoding API のキー（無ければ GPS の候補は使えない）
+    maps_api_key: str | None = None
+
+    @field_validator("login_client_id", "login_client_secret", "session_secret", "maps_api_key")
+    @classmethod
+    def check_secret_refs(cls, value: str | None) -> str | None:
+        return _check_ref(value)
+
+
 class ClientConfig(_Model):
     client_id: str
     display_name: str = ""
@@ -106,6 +126,7 @@ class ClientConfig(_Model):
     own_email_domains: tuple[str, ...] = ()
     zoho: ZohoConfig | None = None
     recall: RecallConfig | None = None
+    app: AppConfig | None = None
     field_map_overrides: dict[str, Any] = Field(default_factory=dict, alias="field_map")
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
@@ -135,6 +156,13 @@ class ClientConfig(_Model):
         if self.recall is None:
             raise ConfigError(f"クライアント {self.client_id} に recall の設定がありません")
         return self.recall
+
+    def need_app(self) -> AppConfig:
+        if self.app is None:
+            raise ConfigError(
+                f"クライアント {self.client_id} に app（録音アプリのログイン）の設定がありません"
+            )
+        return self.app
 
 
 _REGIONAL_SECRET_RE = re.compile(r"^projects/[^/]+/locations/(?P<location>[a-z0-9-]+)/secrets/")

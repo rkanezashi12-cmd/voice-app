@@ -191,6 +191,14 @@ class CrmService:
                 break
         return records
 
+    async def get_org(self) -> dict[str, Any]:
+        """接続先の組織（org[0]。id / domain_name / company_name など）。"""
+        resp = await self._request("GET", "/org")
+        if resp.status_code >= 400:
+            raise error_from_response("zoho_crm", resp, "組織情報の取得に失敗しました")
+        org = self._json(resp).get("org")
+        return org[0] if isinstance(org, list) and org and isinstance(org[0], dict) else {}
+
     async def coql(self, query: str) -> list[dict[str, Any]]:
         resp = await self._request("POST", "/coql", json={"select_query": query})
         if resp.status_code == 204:
