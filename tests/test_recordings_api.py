@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
@@ -195,9 +197,13 @@ def test_recorder_page_is_served_with_security_headers(client: TestClient) -> No
 
 
 def test_issue_url_writes_recording_url_to_crm(client: TestClient, crm: FakeCrm) -> None:
+    # 商談開始はテストを動かす日より先にする（過ぎた日時だと、有効期限は発行した時刻から数える）
+    start = (datetime.now(ZoneInfo("Asia/Tokyo")) + timedelta(days=3)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    )
     res = client.post(
         "/api/recordings",
-        json={"record_id": "5001", "start_at": "2026-10-01T10:00:00+09:00"},
+        json={"record_id": "5001", "start_at": start.isoformat()},
         headers={"X-API-Key": API_KEY},
     )
     assert res.status_code == 200
@@ -205,7 +211,7 @@ def test_issue_url_writes_recording_url_to_crm(client: TestClient, crm: FakeCrm)
     assert body["crm_updated"] is True
     assert crm.writes_to("5001") == [{F.recording_url: body["recording_url"]}]
     # 有効期限は商談開始から24時間
-    assert body["expires_at"].startswith("2026-10-02T01:00:00")
+    assert datetime.fromisoformat(body["expires_at"].replace("Z", "+00:00")) == start + timedelta(hours=24)
 
 
 def test_health(client: TestClient) -> None:
