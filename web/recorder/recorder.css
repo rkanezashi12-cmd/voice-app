@@ -264,3 +264,63 @@ button:disabled {
   overflow: auto;
   padding-left: 2.5em;
 }
+
+/* 録音アプリ（/app/）から開いたとき：下のタブ（入力・録音・日報）と「日報を見る」 */
+body.from-app {
+  --primary: #0f3c68;
+}
+
+body.from-app .page {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
+.app-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  max-width: 640px;
+  margin: 0 auto;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.app-nav a,
+.app-nav span {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 18px;
+  text-decoration: none;
+}
+
+.app-nav :first-child {
+  border-left: none;
+}
+
+.app-nav .active {
+  background: #0f3c68;
+  color: #fff;
+}
+
+a.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin-top: 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+a.button.primary {
+  background: var(--primary);
+  color: #fff;
+}

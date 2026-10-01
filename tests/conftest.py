@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -29,13 +29,19 @@ from app.recording_token import issue
 from app.runtime import Runtime
 from app.services.crm import STANDARD_MODULES, CrmWriteForbidden
 from app.services.gemini import LlmResult
+from app.services.geocoding import Place
 from app.services.storage import StoredObject
+from app.services.zoho_login import ZohoLoginError, ZohoUser
+from app.web_session import AppSession, issue_session
 
 API_KEY = "test-api-key-0123456789"
 TOKEN_SECRET = "test-recording-secret"
 SERVICE_URL = "https://meeting-notes.example.run.app"
 TASKS_SA = "tasks-invoker@proj.iam.gserviceaccount.com"
 WEBHOOK_SECRET = "whsec_dGVzdC13ZWJob29rLXNlY3JldC0xMjM0NTY="
+SESSION_SECRET = "test-session-secret"
+ORG_ID = "4928352000000020005"
+APP_USER_ID = "9001"
 FM = FieldMap()
 F = FM.meeting_record
 S = FM.status
@@ -108,6 +114,7 @@ class FakeCrm:
         self.writes: list[tuple[str, str, str, dict[str, Any]]] = []
         self.coql_queries: list[str] = []
         self.coql_rows: list[dict[str, Any]] = []
+        self.coql_handler: Callable[[str], list[dict[str, Any]]] | None = None
         self.dry_run = False
         self.fail_writes: AppError | None = None
         self.writable_modules = frozenset({fm.meeting_record.module, fm.glossary.module})
@@ -135,6 +142,8 @@ class FakeCrm:
 
     async def coql(self, query: str) -> list[dict[str, Any]]:
         self.coql_queries.append(query)
+        if self.coql_handler is not None:
+            return self.coql_handler(query)
         f = self.fm.meeting_record
         if f"from {f.module} " in query and f"where {f.recall_id} = '" in query:
             recall_id = query.split(f"where {f.recall_id} = '", 1)[1].split("'", 1)[0]
@@ -310,12 +319,68 @@ class FakeLlm:
 # ---- クライアント単位のサービス ----
 
 
+class FakeLogin:
+    """ZohoLogin の偽物。exchange / current_user の結果をテストごとに変える。"""
+
+    def __init__(self) -> None:
+        self.user = ZohoUser(
+            user_id=APP_USER_ID, name="金指 営業", email="sales@example.com", status="active", org_id=ORG_ID
+        )
+        self.exchange_error: ZohoLoginError | None = None
+        self.codes: list[str] = []
+
+    def authorize_url(self, state: str) -> str:
+        return f"https://accounts.zoho.com/oauth/v2/auth?state={state}"
+
+    async def exchange(self, code: str) -> str:
+        self.codes.append(code)
+        if self.exchange_error:
+            raise self.exchange_error
+        return "user-access-token"
+
+    async def current_user(self, access_token: str) -> ZohoUser:
+        assert access_token == "user-access-token"
+        return self.user
+
+
+class FakeGeocoder:
+    def __init__(self) -> None:
+        self.place = Place(prefecture="神奈川県", city="横浜市", ward="中区", town="山下町")
+        self.calls: list[tuple[float, float]] = []
+
+    async def reverse(self, lat: float, lng: float) -> Place:
+        self.calls.append((lat, lng))
+        return self.place
+
+
 class FakeClientServices:
-    def __init__(self, config: ClientConfig, crm: FakeCrm, recall: FakeRecall) -> None:
+    def __init__(
+        self,
+        config: ClientConfig,
+        crm: FakeCrm,
+        recall: FakeRecall,
+        *,
+        login: FakeLogin | None = None,
+        geocoder: FakeGeocoder | None = None,
+    ) -> None:
         self.config = config
         self.field_map = config.field_map
         self._crm = crm
         self._recall = recall
+        self.login = login or FakeLogin()
+        self.geo = geocoder
+
+    async def session_secret(self) -> bytes:
+        return SESSION_SECRET.encode()
+
+    async def zoho_login(self) -> FakeLogin:
+        return self.login
+
+    async def geocoder(self) -> FakeGeocoder | None:
+        return self.geo
+
+    async def org_id(self) -> str:
+        return ORG_ID
 
     @property
     def client_id(self) -> str:
@@ -361,6 +426,12 @@ def base_client_config() -> dict[str, Any]:
                     "bot_name": "議事録ボット（録音中）",
                     "transcript_request": {"provider": {"recallai_async": {"language_code": "ja"}}},
                 },
+                "app": {
+                    "login_client_id": "env:TEST_LOGIN_CLIENT_ID",
+                    "login_client_secret": "env:TEST_LOGIN_CLIENT_SECRET",
+                    "session_secret": "env:TEST_SESSION_SECRET",
+                    "maps_api_key": "env:TEST_MAPS_API_KEY",
+                },
             }
         }
     }
@@ -374,6 +445,10 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_ZOHO_REFRESH_TOKEN", "zoho-refresh-token")
     monkeypatch.setenv("TEST_RECALL_API_KEY", "recall-api-key")
     monkeypatch.setenv("TEST_RECALL_WEBHOOK_SECRET", WEBHOOK_SECRET)
+    monkeypatch.setenv("TEST_LOGIN_CLIENT_ID", "login-client-id")
+    monkeypatch.setenv("TEST_LOGIN_CLIENT_SECRET", "login-client-secret")
+    monkeypatch.setenv("TEST_SESSION_SECRET", SESSION_SECRET)
+    monkeypatch.setenv("TEST_MAPS_API_KEY", "maps-api-key")
 
 
 @pytest.fixture
@@ -402,6 +477,16 @@ def llm() -> FakeLlm:
 
 
 @pytest.fixture
+def zoho_login() -> FakeLogin:
+    return FakeLogin()
+
+
+@pytest.fixture
+def geocoder() -> FakeGeocoder:
+    return FakeGeocoder()
+
+
+@pytest.fixture
 def settings() -> Settings:
     return make_settings()
 
@@ -420,8 +505,10 @@ def runtime(
     crm: FakeCrm,
     recall: FakeRecall,
     llm: FakeLlm,
+    zoho_login: FakeLogin,
+    geocoder: FakeGeocoder,
 ) -> Runtime:
-    services = FakeClientServices(registry.get("default"), crm, recall)
+    services = FakeClientServices(registry.get("default"), crm, recall, login=zoho_login, geocoder=geocoder)
     return Runtime(
         settings,
         registry,
@@ -449,4 +536,18 @@ def recording_token(record_id: str = "1234567890", *, test: bool = False, ttl: i
         record_id=record_id,
         expires_at=int(time.time()) + ttl,
         test=test,
+    )
+
+
+def app_session_cookie(user_id: str = APP_USER_ID, *, ttl: int = 3600, client_id: str = "default") -> str:
+    """録音アプリにログインした状態の Cookie の値。"""
+    return issue_session(
+        SESSION_SECRET.encode(),
+        AppSession(
+            client_id=client_id,
+            user_id=user_id,
+            name="金指 営業",
+            email="sales@example.com",
+            expires_at=int(time.time()) + ttl,
+        ),
     )

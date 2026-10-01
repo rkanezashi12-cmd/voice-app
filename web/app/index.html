@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>商談音声日報</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header class="topbar"><h1>商談音声日報</h1></header>
+    <nav class="steps" aria-label="進み具合" hidden>
+      <span class="step" data-step="input"><b>1</b>入力</span>
+      <span class="step-sep" aria-hidden="true"></span>
+      <span class="step" data-step="record"><b>2</b>録音</span>
+      <span class="step-sep" aria-hidden="true"></span>
+      <span class="step" data-step="report"><b>3</b>日報</span>
+    </nav>
+
+    <main class="page">
+      <section id="view-loading" class="panel"><div class="panel-body">読み込み中…</div></section>
+
+      <section id="view-login" class="panel" hidden>
+        <h2 class="panel-head">ログイン</h2>
+        <div class="panel-body">
+          <p>Zoho CRM のアカウントでログインしてください。</p>
+          <p id="login-error" class="warning" hidden></p>
+          <a id="btn-login" class="button primary block" href="/auth/login">Zoho でログイン</a>
+        </div>
+      </section>
+
+      <section id="view-error" class="panel" hidden>
+        <h2 class="panel-head">表示できません</h2>
+        <div class="panel-body"><p id="error-message"></p></div>
+      </section>
+
+      <div id="tab-input" class="tab" hidden>
+        <section class="panel">
+          <h2 class="panel-head">訪問・商談情報</h2>
+          <div class="panel-body">
+            <dl class="rows">
+              <div>
+                <dt>営業担当者</dt>
+                <dd><span id="user-name">-</span> <button id="btn-logout" type="button" class="link">ログアウト</button></dd>
+              </div>
+              <div><dt>GPS状態</dt><dd id="gps-state">未取得</dd></div>
+            </dl>
+            <button id="btn-gps" type="button" class="primary block">GPSから訪問先候補を取得</button>
+            <p id="gps-attribution" class="hint" hidden>位置から住所を調べるのに Google Maps を使っています</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-head">訪問先</h2>
+          <div class="panel-body">
+            <div class="field">
+              <label for="sel-account">訪問先</label>
+              <select id="sel-account"><option value="">候補を取得してください</option></select>
+            </div>
+            <div class="field">
+              <label for="q">顧客検索</label>
+              <input id="q" type="search" placeholder="会社名・住所・担当者" maxlength="40" enterkeyhint="search" />
+            </div>
+            <button id="btn-search" type="button" class="outline block">検索して候補を表示</button>
+            <div class="pair">
+              <button id="btn-new" type="button" class="outline">新規顧客を登録</button>
+              <button id="btn-contacts" type="button" class="outline" disabled>担当者を選択</button>
+            </div>
+
+            <div id="new-form" class="subform" hidden>
+              <div class="field">
+                <label for="new-name">会社名</label>
+                <input id="new-name" type="text" maxlength="100" autocomplete="off" />
+              </div>
+              <p class="hint">CRM には登録しません。商談記録に名前を残します（あとで CRM に顧客を登録して紐づけてください）。</p>
+              <div class="pair">
+                <button id="btn-new-cancel" type="button" class="outline">やめる</button>
+                <button id="btn-new-ok" type="button" class="primary">訪問先にする</button>
+              </div>
+            </div>
+
+            <div id="contact-picker" class="subform" hidden>
+              <p id="contact-hint" class="hint">担当者を選んでください（複数可）</p>
+              <ul id="contact-list" class="checklist"></ul>
+              <div class="field">
+                <label for="extra-contact">担当者を追加</label>
+                <input id="extra-contact" type="text" maxlength="60" placeholder="CRM に無い人の名前" autocomplete="off" />
+              </div>
+              <button id="btn-extra-add" type="button" class="outline block">追加</button>
+              <button id="btn-contacts-done" type="button" class="primary block">担当者を決定</button>
+            </div>
+
+            <p id="selection" class="selection">訪問先を選択してください。</p>
+          </div>
+        </section>
+
+        <button id="btn-to-record" type="button" class="primary block big" disabled>録音へ進む</button>
+      </div>
+
+      <div id="tab-record" class="tab" hidden>
+        <section class="panel">
+          <h2 class="panel-head">録音</h2>
+          <div class="panel-body">
+            <dl class="rows">
+              <div><dt>訪問先</dt><dd id="rec-account">-</dd></div>
+              <div><dt>担当者</dt><dd id="rec-contacts">-</dd></div>
+            </dl>
+            <p id="rec-missing" class="warning" hidden>先に「入力」で訪問先を選んでください。</p>
+            <p class="notice">録音を始める前に、相手に録音することを伝えてください。</p>
+            <button id="btn-open-recorder" type="button" class="primary block big">録音画面を開く</button>
+            <p class="hint">押すと CRM に商談記録を作って、録音画面に移ります。</p>
+          </div>
+        </section>
+      </div>
+
+      <div id="tab-report" class="tab" hidden>
+        <section id="report-detail" class="panel" hidden>
+          <h2 id="rd-title" class="panel-head">日報</h2>
+          <div class="panel-body">
+            <dl class="rows">
+              <div><dt>訪問先</dt><dd id="rd-account">-</dd></div>
+              <div><dt>担当者</dt><dd id="rd-contacts">-</dd></div>
+              <div><dt>状態</dt><dd id="rd-status">-</dd></div>
+            </dl>
+            <p id="rd-progress" class="notice" hidden>文字起こしと要約を作っています。数分かかります（自動で更新します）。</p>
+            <p id="rd-error" class="warning" hidden></p>
+            <div id="rd-body"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-head">今日の記録</h2>
+          <div class="panel-body">
+            <ul id="visit-list" class="visit-list"></ul>
+            <p id="visit-empty" class="hint" hidden>今日の記録はまだありません。</p>
+          </div>
+        </section>
+      </div>
+
+      <p id="toast" class="toast" role="status" hidden></p>
+    </main>
+
+    <nav class="tabbar" aria-label="画面" hidden>
+      <a href="#input" data-tab="input">入力</a>
+      <a href="#record" data-tab="record">録音</a>
+      <a href="#report" data-tab="report">日報</a>
+    </nav>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

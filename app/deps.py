@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Path, status
+from fastapi import Depends, Header, HTTPException, Path, Request, status
 
 from app.clients import ClientConfig
 from app.errors import ConfigError
 from app.logs import log_event
 from app.recording_token import RecordingToken, TokenError, verify
 from app.runtime import Runtime, get_runtime
+from app.web_session import SESSION_COOKIE, AppSession, SessionError, peek_client_id, verify_session
 
 logger = logging.getLogger(__name__)
 
@@ -92,3 +94,37 @@ async def tasks_oidc(
 
 
 TasksOidcDep = Depends(tasks_oidc)
+
+
+# ---- 録音アプリ（/app/）：Zoho でログインした営業 ----
+
+# 書き込み（POST など）に付けてもらうヘッダー。別のサイトのページからは付けられない（CORS を許可していない）ので、
+# Cookie を使ったなりすましの送信（CSRF）を防げる。SameSite=Lax の Cookie と二重の守り
+APP_REQUEST_HEADER = "X-Requested-With"
+APP_REQUEST_VALUE = "meeting-notes-app"
+
+
+async def open_app_session(rt: Runtime, token: str) -> AppSession:
+    """Cookie の値を確かめる。どのクライアントの鍵で確かめるかは、本文のクライアント ID で決める。"""
+    client_id = peek_client_id(token)
+    try:
+        cs = rt.client_services(client_id)
+        secret = await cs.session_secret()
+    except ConfigError as exc:
+        raise SessionError("クライアントが無効です") from exc
+    return verify_session(secret, token, now=time.time())
+
+
+async def app_user(rt: RuntimeDep, request: Request) -> AppSession:
+    if request.method not in ("GET", "HEAD") and request.headers.get(APP_REQUEST_HEADER) != APP_REQUEST_VALUE:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "このページからの操作ではありません")
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "ログインしてください")
+    try:
+        return await open_app_session(rt, token)
+    except SessionError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "ログインし直してください") from exc
+
+
+AppUserDep = Annotated[AppSession, Depends(app_user)]

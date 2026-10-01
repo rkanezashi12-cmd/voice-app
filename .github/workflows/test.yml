@@ -42,3 +42,5 @@ jobs:
         run: npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
       - name: E2E (fake microphone)
         run: node tests/e2e/recorder.e2e.mjs
+      - name: E2E (visit app)
+        run: node tests/e2e/app.e2e.mjs

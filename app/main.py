@@ -18,13 +18,14 @@ from app.errors import AppError, ConfigError, ExternalServiceError, PermanentErr
 from app.logs import log_event, set_trace, setup_logging
 from app.pipeline.process import ProcessRequest, run_process
 from app.pipeline.recall_flow import handle_recall_event
-from app.routers import bots, desktop, internal, recordings, webhooks
+from app.routers import app_api, app_auth, bots, desktop, internal, recordings, webhooks
 from app.runtime import Runtime
 from app.services.tasks import LocalTaskQueue
 
 logger = logging.getLogger(__name__)
 
 RECORDER_DIR = Path(__file__).resolve().parent.parent / "web" / "recorder"
+APP_DIR = Path(__file__).resolve().parent.parent / "web" / "app"
 
 # 録音ページ用のセキュリティヘッダー（GCS への直接アップロードだけを許可する）
 RECORDER_HEADERS = {
@@ -34,6 +35,18 @@ RECORDER_HEADERS = {
         "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     ),
     "Permissions-Policy": "microphone=(self), screen-wake-lock=(self)",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-cache",
+}
+
+# 録音アプリ（/app/）のセキュリティヘッダー（同じサイトの API だけ。位置情報を使う）
+APP_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    ),
+    "Permissions-Policy": "geolocation=(self), microphone=()",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-cache",
@@ -87,6 +100,8 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
         response = await call_next(request)
         if request.url.path.startswith("/recorder"):
             response.headers.update(RECORDER_HEADERS)
+        elif request.url.path.startswith("/app") or request.url.path.startswith("/api/app"):
+            response.headers.update(APP_HEADERS)
         return response
 
     @app.exception_handler(AppError)
@@ -118,5 +133,8 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
     app.include_router(desktop.router)
     app.include_router(webhooks.router)
     app.include_router(internal.router)
+    app.include_router(app_auth.router)
+    app.include_router(app_api.router)
     app.mount("/recorder", StaticFiles(directory=RECORDER_DIR, html=True), name="recorder")
+    app.mount("/app", StaticFiles(directory=APP_DIR, html=True), name="app")
     return app
