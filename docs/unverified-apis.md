@@ -54,6 +54,20 @@ H5d・H6・H7d はデスクトップ録音（入口C。Phase 2）を初めて動
   補正（correct）は 478 文字で1回目は約100秒、2回目（DRY_RUN=false で同じ音声）は約9秒で、処理全体は約35秒。
   長い録音での所要時間は次の確認で見る
 
+## 録音アプリ（docs/visit-app.md）
+
+すべて検索結果の抜粋で確かめた形（公式ページの全文は開けていない。2026-10-01）。実機で最初に使うときに確かめる。
+
+| # | 項目 | 実装での想定 | 該当箇所 |
+|---|---|---|---|
+| A1 | Zoho の「ログイン」（認可コード方式） | `GET {accounts}/oauth/v2/auth?scope=ZohoCRM.users.READ,ZohoCRM.org.READ&client_id&response_type=code&access_type=online&redirect_uri&state`。戻りは `?code&state&location&accounts-server`（拒否は `error=access_denied`）。`POST {accounts}/oauth/v2/token`（grant_type=authorization_code）は失敗しても HTTP 200 で `{"error": ...}` を返すので、`access_token` の有無で判定 | `app/services/zoho_login.py`, `app/routers/app_auth.py` |
+| A2 | ログインした人の確認 | 本人のトークンで `GET /crm/v8/users?type=CurrentUser` → `users[0]`（`id`・`full_name`・`email`・`status`）、`GET /crm/v8/org` → `org[0].id` をバックエンドの組織と突き合わせる。プロファイルで API の利用が許可されていないと 403（`NO_PERMISSION`） | `app/services/zoho_login.py` |
+| A3 | COQL の書き方 | `like '%語%'`（文字列）。3つ以上の条件は2つずつかっこでくくる（`((A or B) or (C or D))`）。`Owner = '<ID>'`、連絡先の `Account_Name = '<ID>'`、`is not null`、日時の `between '2026-10-01T00:00:00+09:00' and '…'`。日本語の `like` は未確認 | `app/visits.py` |
+| A4 | お客様の CRM の顧客企業の住所の項目 | 請求先住所（`Billing_State` / `Billing_City` / `Billing_Street`）に入っている。違えば `field_map.standard` で変える | `app/field_map.py` |
+| A5 | Google Geocoding API（逆ジオコーディング） | `GET https://maps.googleapis.com/maps/api/geocode/json?latlng&language=ja&key` → `status`、`results[].address_components[]`（都道府県 `administrative_area_level_1`、市区町村・東京23区 `locality`、政令指定都市の区 `sublocality_level_1`（`ward` の種類は付かないことがある）、町 `sublocality_level_2`、丁目 `sublocality_level_3`） | `app/services/geocoding.py` |
+| A6 | Geocoding API のキーの作り方 | `gcloud services api-keys create --key-id --api-target=service=geocoding-backend.googleapis.com` と `gcloud services api-keys get-key-string <ID> --format='value(keyString)'` | `scripts/setup_app_login.sh` |
+| A7 | スマホのブラウザの位置情報 | HTTPS で `navigator.geolocation.getCurrentPosition`（初回に許可を聞く。拒否は code 1）。iPhone の Chrome はアプリ自体の位置情報の許可も要る | `web/app/app.js` |
+
 ## CRM の自動作成（scripts/crm_setup.py）
 
 実測リファレンス（zoho-crm-build）に載っていなかった形。すべて確認済み（2026-09-29、マルサン木型の本番組織で apply を実行。

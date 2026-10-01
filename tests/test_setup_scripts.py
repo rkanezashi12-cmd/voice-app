@@ -72,6 +72,13 @@ case "$1 $2" in
     fi ;;
   "secrets create") cat > "$SIM/store/$3" ;;
   "run services") [ "$3" != describe ] || cat "$SIM/service.json" ;;
+  "services enable") exit 0 ;;
+  "services api-keys")
+    case "$3" in
+      describe) [ -f "$SIM/store/apikey-$4" ] ;;
+      create) for a in "$@"; do case "$a" in --key-id=*) touch "$SIM/store/apikey-${a#--key-id=}" ;; esac; done ;;
+      get-key-string) echo "AIzaFakeGeocodingKey" ;;
+    esac ;;
   *) echo "想定外の呼び出し: $*" >&2; exit 2 ;;
 esac
 """
@@ -109,6 +116,10 @@ def _run_setup_recall(
     clients: dict = {"clients": {"default": {"zoho": {"dc": "us"}}}}
     if bot_name:
         clients["clients"]["default"]["recall"] = {"bot_name": bot_name}
+    return _run_script(sim, "setup_recall.sh", answers, clients)
+
+
+def _run_script(sim: Path, script: str, answers: list[str], clients: dict) -> subprocess.CompletedProcess:
     env = [
         {"name": "CLIENTS_CONFIG_JSON", "value": json.dumps(clients)},
         {"name": "SERVICE_URL", "value": "https://svc.example.run.app"},
@@ -117,7 +128,7 @@ def _run_setup_recall(
     (sim / "service.json").write_text(json.dumps(service), encoding="utf-8")
     (sim / "gcloud.log").write_text("", encoding="utf-8")
     return subprocess.run(  # noqa: S603 リポジトリ内のスクリプトを偽の gcloud で実行する
-        ["bash", str(ROOT / "scripts" / "setup_recall.sh")],  # noqa: S607
+        ["bash", str(ROOT / "scripts" / script)],  # noqa: S607
         input="".join(f"{a}\n" for a in answers),
         env={**os.environ, "PATH": f"{sim / 'bin'}:{os.environ['PATH']}", "SIM": str(sim)},
         capture_output=True,
@@ -138,11 +149,14 @@ def _saved(sim: Path) -> list[str]:
     return added + [c[2] for c in calls if c[:2] == ["secrets", "create"]]
 
 
-def _deployed_bot_name(sim: Path) -> str:
+def _deployed_config(sim: Path) -> dict:
     update = next(c for c in _gcloud_calls(sim) if c[:3] == ["run", "services", "update"])
     arg = next(a for a in update if a.startswith("--update-env-vars="))
-    config = arg.split("CLIENTS_CONFIG_JSON=", 1)[1].split("@@RECALL_CONFIG_UPDATED_AT=", 1)[0]
-    return json.loads(config)["clients"]["default"]["recall"]["bot_name"]
+    return json.loads(arg.split("CLIENTS_CONFIG_JSON=", 1)[1].split("@@", 1)[0])
+
+
+def _deployed_bot_name(sim: Path) -> str:
+    return _deployed_config(sim)["clients"]["default"]["recall"]["bot_name"]
 
 
 def test_setup_recall_first_run_saves_both_secrets(recall_sim: Path) -> None:
@@ -187,3 +201,74 @@ def test_setup_recall_bot_name_prompt_allows_line_editing() -> None:
     text = (ROOT / "scripts" / "setup_recall.sh").read_text(encoding="utf-8")
     assert "read -erp" in text
     assert "trap '' TSTP" in text
+
+
+# ---- setup_app_login.sh（録音アプリのログインと GPS の候補） ----
+
+
+def test_setup_app_login_adds_app_config_that_the_app_accepts() -> None:
+    current = json.loads((ROOT / "config" / "clients.example.json").read_text(encoding="utf-8"))
+    code = _embedded_python("setup_app_login.sh", 'CONFIG_OUT="$(')
+    result = subprocess.run(  # noqa: S603 リポジトリ内のスクリプトの一部を実行する
+        [sys.executable, "-c", code, "default", "projects/p/secrets"],
+        env={**os.environ, "SVC_JSON": _service(current), "USE_MAPS": "1"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    env_value, shown = result.stdout.splitlines()
+    assert env_value.isascii()
+    assert json.loads(shown) == json.loads(env_value)
+    client = ClientRegistry.load(json_text=env_value).get("default")
+    app = client.need_app()
+    assert app.login_client_id == "sm:projects/p/secrets/app-login-client-id/versions/latest"
+    assert app.login_client_secret == "sm:projects/p/secrets/app-login-client-secret/versions/latest"
+    assert app.session_secret == "sm:projects/p/secrets/app-session-secret/versions/latest"
+    assert app.maps_api_key == "sm:projects/p/secrets/app-maps-api-key/versions/latest"
+    assert client.recall is not None and client.zoho is not None, "ほかの設定は残す"
+
+
+def test_setup_app_login_first_run_with_gps(recall_sim: Path) -> None:
+    clients = {"clients": {"default": {"zoho": {"dc": "us"}}}}
+    res = _run_script(
+        recall_sim, "setup_app_login.sh", ["1000.LOGINID", "login-secret", "yes", "yes"], clients
+    )
+    assert res.returncode == 0, res.stderr
+    assert sorted(_saved(recall_sim)) == [
+        "app-login-client-id",
+        "app-login-client-secret",
+        "app-maps-api-key",
+        "app-session-secret",
+    ]
+    store = recall_sim / "store"
+    assert (store / "app-maps-api-key").read_text() == "AIzaFakeGeocodingKey"
+    assert len((store / "app-session-secret").read_text()) >= 40
+    assert "https://svc.example.run.app/auth/callback" in res.stdout, "API コンソールに登録する URL を出す"
+    assert "AIzaFakeGeocodingKey" not in res.stdout, "API キーは画面に出さない"
+    app = _deployed_config(recall_sim)["clients"]["default"]["app"]
+    assert app["maps_api_key"].endswith("/app-maps-api-key/versions/latest")
+    assert "https://svc.example.run.app/app/" in res.stdout
+
+
+def test_setup_app_login_rerun_keeps_everything(recall_sim: Path) -> None:
+    store = recall_sim / "store"
+    for name, value in {
+        "app-login-client-id": "1000.LOGINID",
+        "app-login-client-secret": "login-secret",
+        "app-session-secret": "s" * 64,
+        "app-maps-api-key": "AIzaOld",
+    }.items():
+        (store / name).write_text(value)
+    clients = {"clients": {"default": {"zoho": {"dc": "us"}, "app": {"session_hours": 8}}}}
+    res = _run_script(recall_sim, "setup_app_login.sh", ["", "", "no", "yes"], clients)
+    assert res.returncode == 0, res.stderr
+    assert _saved(recall_sim) == [], "保存済みの値は保存し直さない（署名鍵も作り直さない）"
+    app = _deployed_config(recall_sim)["clients"]["default"]["app"]
+    assert app["session_hours"] == 8, "ほかの設定は残す"
+    assert "maps_api_key" in app, "保存済みの地図のキーは使い続ける"
+
+
+def test_setup_app_login_needs_zoho_connection(recall_sim: Path) -> None:
+    res = _run_script(recall_sim, "setup_app_login.sh", [], {"clients": {"default": {}}})
+    assert res.returncode == 1
+    assert "zoho がありません" in res.stderr
