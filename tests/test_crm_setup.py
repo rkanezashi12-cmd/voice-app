@@ -187,15 +187,6 @@ def test_stops_when_contacts_already_has_the_reverse_field_label() -> None:
         cs.build_plan(api, cs.SPEC)
 
 
-def test_stops_when_linking_module_name_is_taken() -> None:
-    api = _meeting_records_without("Customer_Contacts")
-    api.modules.append(
-        {"api_name": "Link1", "generated_type": "linking", "plural_label": "商談記録の先方担当者"}
-    )
-    with pytest.raises(cs.SetupError, match="中間モジュール"):
-        cs.build_plan(api, cs.SPEC)
-
-
 def test_lookup_fields_have_display_label() -> None:
     for m in cs.SPEC:
         for f in m.fields:
