@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Path, Request, status
+from fastapi import Depends, Header, HTTPException, Path, Request, Response, status
 
 from app.clients import ClientConfig
-from app.errors import ConfigError
+from app.errors import AppError, ConfigError
 from app.logs import log_event
 from app.recording_token import RecordingToken, TokenError, verify
 from app.runtime import Runtime, get_runtime
-from app.web_session import SESSION_COOKIE, AppSession, SessionError, peek_client_id, verify_session
+from app.web_session import (
+    SESSION_COOKIE,
+    AppSession,
+    SessionError,
+    issue_session,
+    peek_client_id,
+    verify_session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +110,8 @@ TasksOidcDep = Depends(tasks_oidc)
 # Cookie を使ったなりすましの送信（CSRF）を防げる。SameSite=Lax の Cookie と二重の守り
 APP_REQUEST_HEADER = "X-Requested-With"
 APP_REQUEST_VALUE = "meeting-notes-app"
+# ログインは長く（既定90日）続くので、この間隔で CRM の有効なユーザーかを確かめ直す（退職・無効化に追いつく）
+SESSION_RECHECK_SECONDS = 12 * 3600
 
 
 async def open_app_session(rt: Runtime, token: str) -> AppSession:
@@ -115,16 +125,65 @@ async def open_app_session(rt: Runtime, token: str) -> AppSession:
     return verify_session(secret, token, now=time.time())
 
 
-async def app_user(rt: RuntimeDep, request: Request) -> AppSession:
+def cleared_session_cookie() -> str:
+    """ログインの Cookie を消す Set-Cookie ヘッダー（/auth/logout と同じ属性）。"""
+    tmp = Response()
+    tmp.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    return tmp.headers["set-cookie"]
+
+
+async def recheck_app_user(rt: Runtime, session: AppSession, response: Response, now: int) -> AppSession:
+    """CRM の有効なユーザーかを確かめ直す。無効なら Cookie を消して 401。確かめた時刻を Cookie に入れ直す。"""
+    cs = rt.client_services(session.client_id)
+    try:
+        active = await cs.crm_user_active(session.user_id)
+    except AppError as exc:
+        # Zoho に届かないときは止めない（前回までは有効だった人）。次の操作でもう一度確かめる
+        log_event(
+            logger,
+            "app.user_recheck_failed",
+            logging.WARNING,
+            client_id=session.client_id,
+            user_id=session.user_id,
+            error_code=exc.code,
+        )
+        return session
+    if not active:
+        log_event(
+            logger, "app.user_inactive", logging.WARNING, client_id=session.client_id, user_id=session.user_id
+        )
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "CRM のユーザーが有効ではありません",
+            headers={"set-cookie": cleared_session_cookie()},
+        )
+    session = dataclasses.replace(session, checked_at=now)
+    response.set_cookie(
+        SESSION_COOKIE,
+        issue_session(await cs.session_secret(), session),
+        max_age=max(session.expires_at - now, 0),
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    return session
+
+
+async def app_user(rt: RuntimeDep, request: Request, response: Response) -> AppSession:
     if request.method not in ("GET", "HEAD") and request.headers.get(APP_REQUEST_HEADER) != APP_REQUEST_VALUE:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "このページからの操作ではありません")
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "ログインしてください")
     try:
-        return await open_app_session(rt, token)
+        session = await open_app_session(rt, token)
     except SessionError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "ログインし直してください") from exc
+    now = int(time.time())
+    if now - session.checked_at >= SESSION_RECHECK_SECONDS:
+        session = await recheck_app_user(rt, session, response, now)
+    return session
 
 
 AppUserDep = Annotated[AppSession, Depends(app_user)]

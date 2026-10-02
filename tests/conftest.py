@@ -117,7 +117,14 @@ class FakeCrm:
         self.coql_handler: Callable[[str], list[dict[str, Any]]] | None = None
         self.dry_run = False
         self.fail_writes: AppError | None = None
+        # 作成を断る条件（送る中身を見て、断るときはエラーを返す）
+        self.reject_create: Callable[[dict[str, Any]], AppError | None] | None = None
         self.writable_modules = frozenset({fm.meeting_record.module, fm.glossary.module})
+        # 設定の読み取り（モジュール・項目）と CRM のユーザー
+        self.modules: list[dict[str, Any]] = []
+        self.settings_fields: dict[str, list[dict[str, Any]]] = {}
+        self.settings_reads: list[str] = []
+        self.users: dict[str, dict[str, Any]] = {}
         self._seq = 0
 
     def check_writable(self, module: str) -> None:
@@ -140,6 +147,18 @@ class FakeCrm:
     async def list_records(self, module: str, fields: list[str], **_: Any) -> list[dict[str, Any]]:
         return [dict(r) for r in self.records.get(module, {}).values()]
 
+    async def list_modules(self) -> list[dict[str, Any]]:
+        self.settings_reads.append("modules")
+        return [dict(m) for m in self.modules]
+
+    async def list_fields(self, module: str) -> list[dict[str, Any]]:
+        self.settings_reads.append(f"fields:{module}")
+        return [dict(f) for f in self.settings_fields.get(module, [])]
+
+    async def get_user(self, user_id: str) -> dict[str, Any] | None:
+        user = self.users.get(user_id)
+        return dict(user) if user else None
+
     async def coql(self, query: str) -> list[dict[str, Any]]:
         self.coql_queries.append(query)
         if self.coql_handler is not None:
@@ -160,6 +179,9 @@ class FakeCrm:
 
     async def create_record(self, module: str, data: dict[str, Any]) -> str:
         self.check_writable(module)
+        rejected = self.reject_create(data) if self.reject_create else None
+        if rejected:
+            raise rejected
         self._seq += 1
         record_id = f"new-{self._seq}"
         self.writes.append(("create", module, record_id, dict(data)))
@@ -369,6 +391,11 @@ class FakeClientServices:
         self._recall = recall
         self.login = login or FakeLogin()
         self.geo = geocoder
+        # 先方担当者（連絡先）に書くときの中間モジュールのルックアップ項目（None は項目がまだ無い）
+        self.contacts_link: str | None = None
+        # CRM のユーザーを確かめ直した結果（例外を入れると Zoho に届かない）
+        self.user_active: bool | AppError = True
+        self.user_checks: list[str] = []
 
     async def session_secret(self) -> bytes:
         return SESSION_SECRET.encode()
@@ -381,6 +408,15 @@ class FakeClientServices:
 
     async def org_id(self) -> str:
         return ORG_ID
+
+    async def contacts_link_field(self) -> str | None:
+        return self.contacts_link
+
+    async def crm_user_active(self, user_id: str) -> bool:
+        self.user_checks.append(user_id)
+        if isinstance(self.user_active, AppError):
+            raise self.user_active
+        return self.user_active
 
     @property
     def client_id(self) -> str:
@@ -539,8 +575,11 @@ def recording_token(record_id: str = "1234567890", *, test: bool = False, ttl: i
     )
 
 
-def app_session_cookie(user_id: str = APP_USER_ID, *, ttl: int = 3600, client_id: str = "default") -> str:
-    """録音アプリにログインした状態の Cookie の値。"""
+def app_session_cookie(
+    user_id: str = APP_USER_ID, *, ttl: int = 3600, client_id: str = "default", checked_ago: int = 0
+) -> str:
+    """録音アプリにログインした状態の Cookie の値（checked_ago 秒前に CRM の有効なユーザーと確かめた）。"""
+    now = int(time.time())
     return issue_session(
         SESSION_SECRET.encode(),
         AppSession(
@@ -548,6 +587,7 @@ def app_session_cookie(user_id: str = APP_USER_ID, *, ttl: int = 3600, client_id
             user_id=user_id,
             name="金指 営業",
             email="sales@example.com",
-            expires_at=int(time.time()) + ttl,
+            expires_at=now + ttl,
+            checked_at=now - checked_ago,
         ),
     )

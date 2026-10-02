@@ -105,8 +105,9 @@ class AppConfig(_Model):
     login_client_secret: str
     # ログインの Cookie と、ログイン途中の state の署名鍵
     session_secret: str
-    # ログインを保つ時間
-    session_hours: int = Field(default=12, ge=1, le=168)
+    # ログインを保つ時間（既定90日。2026-10-02 のユーザーの判断）。長く保つ代わりに、12時間ごとに
+    # CRM の有効なユーザーかを確かめ直し、無効になった人は使えなくする（app/deps.py）
+    session_hours: int = Field(default=90 * 24, ge=1, le=90 * 24)
     # GPS の位置から住所を調べる Google Geocoding API のキー（無ければ GPS の候補は使えない）
     maps_api_key: str | None = None
 

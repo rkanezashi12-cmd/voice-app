@@ -30,6 +30,7 @@ const state = {
   candidates: [],
   selected: null, // { id, name, newCustomer }
   contacts: [], // 選んだ担当者の名前
+  contactIds: [], // 選んだ担当者のうち CRM の連絡先の ID（先方担当者（連絡先）に紐づける）
   contactOptions: [], // 担当者の候補 { id, name, detail }
   pollTimer: null,
   pollCount: 0,
@@ -124,7 +125,10 @@ function route() {
 
 function saveDraft() {
   try {
-    window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ selected: state.selected, contacts: state.contacts }));
+    window.sessionStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({ selected: state.selected, contacts: state.contacts, contactIds: state.contactIds }),
+    );
   } catch {
     // 保存できなくても動作には影響しない
   }
@@ -136,6 +140,9 @@ function restoreDraft() {
     if (draft && draft.selected && typeof draft.selected.name === "string") {
       state.selected = draft.selected;
       state.contacts = Array.isArray(draft.contacts) ? draft.contacts.filter((n) => typeof n === "string") : [];
+      state.contactIds = Array.isArray(draft.contactIds)
+        ? draft.contactIds.filter((id) => typeof id === "string" && /^[0-9]{1,30}$/.test(id))
+        : [];
     }
   } catch {
     // 読めなければ最初から
@@ -145,6 +152,7 @@ function restoreDraft() {
 function clearDraft() {
   state.selected = null;
   state.contacts = [];
+  state.contactIds = [];
   try {
     window.sessionStorage.removeItem(DRAFT_KEY);
   } catch {
@@ -172,6 +180,7 @@ function renderSelection() {
 function select(account) {
   state.selected = account;
   state.contacts = [];
+  state.contactIds = [];
   state.contactOptions = [];
   show("contact-picker", false);
   saveDraft();
@@ -295,6 +304,7 @@ function renderContactList() {
     const box = document.createElement("input");
     box.type = "checkbox";
     box.value = name;
+    if (option) box.dataset.id = option.id;
     box.checked = state.contacts.includes(name);
     label.append(box, document.createTextNode(name));
     if (option && option.detail) {
@@ -336,8 +346,17 @@ async function onContacts() {
   }
 }
 
+function checkedBoxes() {
+  return [...$("contact-list").querySelectorAll("input[type=checkbox]")].filter((b) => b.checked);
+}
+
 function checkedNames() {
-  return [...$("contact-list").querySelectorAll("input[type=checkbox]")].filter((b) => b.checked).map((b) => b.value);
+  return checkedBoxes().map((b) => b.value);
+}
+
+// CRM の連絡先から選んだ人の ID（手で足した名前には ID が無い）
+function checkedIds() {
+  return [...new Set(checkedBoxes().map((b) => b.dataset.id).filter(Boolean))];
 }
 
 function onExtraAdd() {
@@ -351,6 +370,7 @@ function onExtraAdd() {
 
 function onContactsDone() {
   state.contacts = checkedNames();
+  state.contactIds = checkedIds();
   show("contact-picker", false);
   saveDraft();
   renderSelection();
@@ -379,6 +399,7 @@ async function onOpenRecorder() {
         account_name: sel.name,
         new_customer: Boolean(sel.newCustomer),
         contacts: state.contacts,
+        contact_ids: sel.newCustomer ? [] : state.contactIds,
       },
     });
     try {

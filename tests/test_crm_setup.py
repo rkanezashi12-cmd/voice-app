@@ -29,12 +29,14 @@ class FakeApi:
         # api_name → Zoho が返す失敗の行。一部だけ失敗したときの応答（HTTP 207）を再現する
         self.reject = reject or {}
         self.calls: list[tuple[str, str, Any]] = []
+        self.field_reads: list[str] = []  # 項目の設定を読んだモジュール
 
     def request(self, method: str, path: str, params: dict | None = None, body: Any = None) -> Any:
         self.calls.append((method, path, body))
         if method == "GET" and path == "/crm/v8/settings/modules":
             return {"modules": self.modules}
         if method == "GET" and path == "/crm/v8/settings/fields":
+            self.field_reads.append(params["module"])
             return {"fields": self.fields.get(params["module"], [])}
         if method == "GET" and path == "/crm/v8/settings/profiles":
             return {"profiles": [{"id": "p1"}, {"id": "p2"}]}
@@ -138,6 +140,62 @@ def test_stops_when_same_label_field_exists_with_other_api_name() -> None:
         cs.build_plan(api, cs.SPEC)
 
 
+def _meeting_records_without(api_name: str) -> FakeApi:
+    """商談記録に api_name 以外の項目がそろっている組織（2回目以降の apply の想定）。"""
+    spec = next(m for m in cs.SPEC if m.api_name == "MeetingRecords")
+    fields = {
+        "MeetingRecords": [
+            {"api_name": "Name", "field_label": spec.display_field_label, "data_type": "text"},
+            *(dict(f) for f in spec.fields if f["api_name"] != api_name),
+        ],
+        "Glossary": [
+            {"api_name": "Name", "field_label": "用語", "data_type": "text"},
+            *(dict(f) for m in cs.SPEC if m.api_name == "Glossary" for f in m.fields),
+        ],
+        "Contacts": [{"api_name": "Last_Name", "field_label": "姓", "data_type": "text"}],
+    }
+    modules = [
+        *STANDARD,
+        {"api_name": "Contacts", "generated_type": "default", "plural_label": "連絡先"},
+        {"api_name": "MeetingRecords", "generated_type": "custom", "plural_label": "商談記録"},
+        {"api_name": "Glossary", "generated_type": "custom", "plural_label": "用語辞書"},
+    ]
+    return FakeApi(modules, fields)
+
+
+def test_contacts_multiselect_lookup_is_added_and_explained() -> None:
+    """先方担当者（連絡先）だけが無い組織では、それだけを作る。連絡先に足されるものを計画に書く（2026-10-02 了承）。"""
+    api = _meeting_records_without("Customer_Contacts")
+    plan = cs.build_plan(api, cs.SPEC)
+    created = plan.create_fields["MeetingRecords"]
+    assert [f["api_name"] for f in created] == ["Customer_Contacts"]
+    msl = created[0]["multiselectlookup"]
+    assert msl["connected_details"]["module"]["api_name"] == "Contacts"
+    text = cs.describe(plan)
+    assert "Contacts に項目「商談記録」と関連リストを足します" in text
+    assert "データは書き換えません" in text
+    assert "Contacts" in api.field_reads, "連絡先の項目を読んで、同じ名前が無いか確かめる"
+    cs.apply(api, plan)
+    assert cs.verify(api, cs.SPEC) == []
+    assert {c[0] for c in api.calls} <= {"GET", "POST"}
+
+
+def test_stops_when_contacts_already_has_the_reverse_field_label() -> None:
+    api = _meeting_records_without("Customer_Contacts")
+    api.fields["Contacts"].append({"api_name": "Old_Link", "field_label": "商談記録", "data_type": "lookup"})
+    with pytest.raises(cs.SetupError, match="Contacts に表示名「商談記録」"):
+        cs.build_plan(api, cs.SPEC)
+
+
+def test_stops_when_linking_module_name_is_taken() -> None:
+    api = _meeting_records_without("Customer_Contacts")
+    api.modules.append(
+        {"api_name": "Link1", "generated_type": "linking", "plural_label": "商談記録の先方担当者"}
+    )
+    with pytest.raises(cs.SetupError, match="中間モジュール"):
+        cs.build_plan(api, cs.SPEC)
+
+
 def test_lookup_fields_have_display_label() -> None:
     for m in cs.SPEC:
         for f in m.fields:
@@ -206,6 +264,10 @@ def test_field_details_show_actual_settings() -> None:
         'MeetingRecords.Transcript「文字起こし全文」textarea length=32000 textarea={"type": "large"}' in lines
     )
     assert "MeetingRecords.Account「取引先」lookup 参照先=Accounts" in lines
+    msl = next(line for line in lines if line.startswith("MeetingRecords.Customer_Contacts"))
+    assert msl.startswith(
+        "MeetingRecords.Customer_Contacts「先方担当者（連絡先）」multiselectlookup 複数選択="
+    )
 
 
 def test_check_access_reports_missing_scope_without_writing() -> None:

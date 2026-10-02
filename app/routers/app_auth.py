@@ -114,12 +114,14 @@ async def callback(
         log_event(logger, "app.login_failed", logging.ERROR, client_id=client_id, error_code=exc.code)
         return _fail(client_id, "failed")
     hours = cs.config.need_app().session_hours
+    now = int(time.time())
     session = AppSession(
         client_id=client_id,
         user_id=user.user_id,
         name=user.name,
         email=user.email,
-        expires_at=int(time.time()) + hours * 3600,
+        expires_at=now + hours * 3600,
+        checked_at=now,
     )
     resp = RedirectResponse(app_url(client_id), status_code=status.HTTP_302_FOUND)
     _cookie(resp, SESSION_COOKIE, issue_session(secret, session), max_age=hours * 3600, path="/")

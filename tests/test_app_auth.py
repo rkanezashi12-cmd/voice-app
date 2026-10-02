@@ -68,7 +68,8 @@ def test_callback_sets_session_cookie_for_crm_user(https_client: TestClient, zoh
     assert morsel["httponly"] and morsel["secure"]
     session = verify_session(SESSION_SECRET.encode(), morsel.value, now=time.time())
     assert (session.client_id, session.user_id, session.name) == ("default", "9001", "金指 営業")
-    assert session.expires_at > time.time() + 11 * 3600, "既定は12時間"
+    assert session.expires_at > time.time() + 89 * 86400, "既定は90日（2026-10-02 のユーザーの判断）"
+    assert abs(session.checked_at - time.time()) < 5, "ログインした時刻に CRM の有効なユーザーと確かめた"
 
 
 def test_callback_without_state_cookie_is_rejected(https_client: TestClient) -> None:
