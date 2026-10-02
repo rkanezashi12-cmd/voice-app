@@ -1,0 +1,17 @@
+{
+  "service": "CRM",
+  "locale": ["ja", "en"],
+  "storage": false,
+  "whiteListedDomains": [],
+  "cspDomains": { "connect-src": [] },
+  "modules": {
+    "widgets": [
+      {
+        "location": "custom",
+        "name": "MeetingReport",
+        "url": "/app/index.html"
+      }
+    ]
+  },
+  "config": []
+}

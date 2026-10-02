@@ -115,7 +115,7 @@ curl -s $SERVICE_URL/health   # {"status":"ok","dry_run":true}
 | 変数 | 既定 | 使うところ |
 |---|---|---|
 | `DRY_RUN` | `true` | `true` の間は CRM への書き込みと音声の削除を送らない（ログのみ） |
-| `CRM_TEST_RECORDS` | `true` | バックエンドが作るレコード名の先頭に【TEST】を付ける |
+| `CRM_TEST_RECORDS` | `true` | バックエンドが作るレコード名の先頭に【TEST】を付ける（本番運用では `scripts/go_live.sh` で `false`。docs/go-live.md） |
 | `CLIENTS_CONFIG` / `CLIENTS_CONFIG_JSON` | なし（必須） | クライアント設定（ファイルのパス / JSON 文字列）。例は `config/clients.example.json` |
 | `SERVICE_URL` | なし | 録音 URL・Cloud Tasks の宛先・OIDC の audience |
 | `GCP_PROJECT_ID` | なし | Cloud Tasks・Vertex AI |
