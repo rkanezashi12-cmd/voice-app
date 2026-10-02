@@ -134,11 +134,12 @@ def _run_setup_recall(
     return _run_script(sim, "setup_recall.sh", answers, clients)
 
 
-def _prepare(sim: Path, clients: dict) -> dict[str, str]:
+def _prepare(sim: Path, clients: dict, extra_env: dict[str, str] | None = None) -> dict[str, str]:
     """偽の Cloud Run のサービスを置き、偽の gcloud を先に見つける環境変数を返す。"""
     env = [
         {"name": "CLIENTS_CONFIG_JSON", "value": json.dumps(clients)},
         {"name": "SERVICE_URL", "value": "https://svc.example.run.app"},
+        *({"name": k, "value": v} for k, v in (extra_env or {}).items()),
     ]
     service = {"spec": {"template": {"spec": {"containers": [{"env": env}]}}}, "status": {"url": "https://x"}}
     (sim / "service.json").write_text(json.dumps(service), encoding="utf-8")
@@ -146,11 +147,19 @@ def _prepare(sim: Path, clients: dict) -> dict[str, str]:
     return {**os.environ, "PATH": f"{sim / 'bin'}:{os.environ['PATH']}", "SIM": str(sim)}
 
 
-def _run_script(sim: Path, script: str, answers: list[str], clients: dict) -> subprocess.CompletedProcess:
+def _run_script(
+    sim: Path,
+    script: str,
+    answers: list[str],
+    clients: dict,
+    *,
+    extra_env: dict[str, str] | None = None,
+    args: tuple[str, ...] = (),
+) -> subprocess.CompletedProcess:
     return subprocess.run(  # noqa: S603 リポジトリ内のスクリプトを偽の gcloud で実行する
-        ["bash", str(ROOT / "scripts" / script)],  # noqa: S607
+        ["bash", str(ROOT / "scripts" / script), *args],  # noqa: S607
         input="".join(f"{a}\n" for a in answers),
-        env=_prepare(sim, clients),
+        env=_prepare(sim, clients, extra_env),
         capture_output=True,
         text=True,
         timeout=60,
@@ -443,3 +452,67 @@ def test_setup_app_login_ctrl_c_says_nothing_was_saved(recall_sim: Path) -> None
     assert "何も保存していません" in err
     assert "Client ID や Client Secret を貼らないでください" in err
     assert _saved(recall_sim) == []
+
+
+# ---- go_live.sh（本番運用への切り替え：商談記録の名前に【TEST】を付けない） ----
+
+LIVE_CLIENTS = {"clients": {"default": {"zoho": {"dc": "us"}}}}
+
+
+def _env_updates(sim: Path) -> list[str]:
+    return [
+        a
+        for c in _gcloud_calls(sim)
+        if c[:3] == ["run", "services", "update"]
+        for a in c
+        if a.startswith("--update-env-vars=")
+    ]
+
+
+def test_go_live_turns_off_test_names_only(recall_sim: Path) -> None:
+    env = {"DRY_RUN": "false", "CRM_TEST_RECORDS": "true"}
+    res = _run_script(recall_sim, "go_live.sh", ["yes"], LIVE_CLIENTS, extra_env=env)
+    assert res.returncode == 0, res.stderr
+    assert _env_updates(recall_sim) == ["--update-env-vars=CRM_TEST_RECORDS=false"], (
+        "変えるのは CRM_TEST_RECORDS だけ"
+    )
+    assert "テストの記録" in res.stdout, "先に CRM の画面でテストの記録を消すよう案内する"
+    assert "本番運用（商談記録の名前に【TEST】を付けない）に切り替えました" in res.stdout
+
+
+def test_go_live_cancel_changes_nothing(recall_sim: Path) -> None:
+    env = {"DRY_RUN": "false", "CRM_TEST_RECORDS": "true"}
+    res = _run_script(recall_sim, "go_live.sh", ["no"], LIVE_CLIENTS, extra_env=env)
+    assert res.returncode == 1
+    assert "何も変えていません" in res.stderr
+    assert _env_updates(recall_sim) == []
+
+
+def test_go_live_when_already_live_changes_nothing(recall_sim: Path) -> None:
+    env = {"DRY_RUN": "false", "CRM_TEST_RECORDS": "false"}
+    res = _run_script(recall_sim, "go_live.sh", [], LIVE_CLIENTS, extra_env=env)
+    assert res.returncode == 0, res.stderr
+    assert "すでに本番運用" in res.stdout
+    assert _env_updates(recall_sim) == []
+
+
+def test_go_live_can_go_back_to_test_names(recall_sim: Path) -> None:
+    env = {"DRY_RUN": "false", "CRM_TEST_RECORDS": "false"}
+    res = _run_script(recall_sim, "go_live.sh", ["yes"], LIVE_CLIENTS, extra_env=env, args=("--test",))
+    assert res.returncode == 0, res.stderr
+    assert _env_updates(recall_sim) == ["--update-env-vars=CRM_TEST_RECORDS=true"]
+
+
+def test_go_live_warns_when_dry_run_is_still_on(recall_sim: Path) -> None:
+    """DRY_RUN が無い（アプリの既定は true）ときは、CRM に書き込まないままだと知らせる。DRY_RUN は変えない。"""
+    res = _run_script(recall_sim, "go_live.sh", ["yes"], LIVE_CLIENTS)
+    assert res.returncode == 0, res.stderr
+    assert "DRY_RUN=true のままです" in res.stdout
+    assert _env_updates(recall_sim) == ["--update-env-vars=CRM_TEST_RECORDS=false"]
+
+
+def test_go_live_rejects_unknown_arguments(recall_sim: Path) -> None:
+    res = _run_script(recall_sim, "go_live.sh", [], LIVE_CLIENTS, args=("--prod",))
+    assert res.returncode == 1
+    assert "使い方" in res.stderr
+    assert _env_updates(recall_sim) == []

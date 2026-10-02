@@ -76,6 +76,21 @@ A8（先方担当者（連絡先）の紐づけ）も、項目を作ったあと
 | A9 | CRM のユーザーが今も有効か | バックエンドの接続（`ZohoCRM.users.READ`）で `GET /crm/v8/users/{id}` → `users[0].status`（`active` 以外は無効）。いないユーザーは 204 か 400 `INVALID_DATA` を想定 | `app/services/crm.py`, `app/deps.py` |
 | A10 | 90日のログインの Cookie | サーバーが付ける HttpOnly・Secure・SameSite=Lax の Cookie（同じサイト）。iPhone の Safari の追跡防止（スクリプトで付けた Cookie を7日で消す）には当たらない想定 | `app/routers/app_auth.py` |
 
+## 商談日報ウィジェット（docs/widget.md）
+
+検索結果の抜粋（他の Zoho 製品のウィジェットの説明・コミュニティの記事）と、zoho-crm-build の実測（農業資材デモ）をもとにした形（2026-10-02）。
+`www.zoho.com` と `help.zoho.com` はこの作業環境から開けなかった。CRM に登録して最初に開くときに確かめる。
+画面の動きは偽の SDK で確かめてある（`tests/e2e/widget.e2e.mjs`）。
+
+| # | 項目 | 実装での想定 | 該当箇所 |
+|---|---|---|---|
+| W1 | ZIP の `plugin-manifest.json` | `service: "CRM"`、`modules.widgets[]` に `location`・`name`・`url`（zet のひな形の形）。CRM の画面で種類（関連リスト）とインデックスページを選ぶので、`location` は使われない想定。ZIP の形（ルートに `plugin-manifest.json` と `app/`、ディレクトリの項目）は zoho-crm-build の実測どおり | `widgets/meeting-report/plugin-manifest.json`, `scripts/build_widget.py` |
+| W2 | 関連リストのウィジェットの `PageLoad` | `data.Entity`（モジュールの API 名）と `data.EntityId`（開いている記録の ID。記事の例は配列 `data.EntityId[0]`、zoho-crm-build は ID とだけ記載）。どちらの形でも読む。`Entity` が無いときは商談記録とみなす | `widgets/meeting-report/app/main.js` |
+| W3 | `ZOHO.CRM.API.getRecord({Entity, RecordID})` | 応答は `{data: [記録]}`。ルックアップは `{name, id}`、日時は `2026-10-02T23:55:00+09:00`、空の項目は null（REST の API と同じ形）。見る権限が無いときは reject（`data[0].code`）か空の `data` | `widgets/meeting-report/app/main.js`, `widgets/meeting-report/app/report.js` |
+| W4 | `ZOHO.CRM.UI.Resize({height})` | 関連リストのウィジェットは高さだけ変えられる（記事の抜粋。Resize の例はボタンのウィジェット）。値は数字の文字列（`"600"`）。効かない・断られても表示は続け、文字起こしの欄は枠の中でスクロールする | `widgets/meeting-report/app/main.js` |
+| W5 | `ZOHO.CRM.UI.Record.open({Entity, RecordID})` | 取引先の画面を開く。ID は文字列のまま渡す（zoho-crm-build の実測：空だと「アクセスできないビュー」） | `widgets/meeting-report/app/main.js` |
+| W6 | ウィジェットを使えるエディション | お客様の CRM で 設定 → 開発者スペース → ウィジェット が使えるか（使えなければ、日報は録音アプリの日報と CRM の商談記録の項目で見る） | `docs/widget.md` |
+
 ## CRM の自動作成（scripts/crm_setup.py）
 
 実測リファレンス（zoho-crm-build）に載っていなかった形。すべて確認済み（2026-09-29、マルサン木型の本番組織で apply を実行。
