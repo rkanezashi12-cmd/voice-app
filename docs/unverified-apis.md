@@ -58,6 +58,10 @@ H5d・H6・H7d はデスクトップ録音（入口C。Phase 2）を初めて動
 
 すべて検索結果の抜粋で確かめた形（公式ページの全文は開けていない。2026-10-01）。実機で最初に使うときに確かめる。
 
+**2026-10-02 の実機の確認（お客様の本番 CRM・スマホ）**：A1・A2（ログインできた）、A3（日本語の会社名で顧客検索できた）、
+A5・A7（GPS で現在地の住所が出た）は動いた。A4（請求先住所での候補）は、近くに顧客企業が無く未確認。
+作った商談記録の担当者（ログインした人）・取引先・先方担当者は正しかった。
+
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
 | A1 | Zoho の「ログイン」（認可コード方式） | `GET {accounts}/oauth/v2/auth?scope=ZohoCRM.users.READ,ZohoCRM.org.READ&client_id&response_type=code&access_type=online&redirect_uri&state`。戻りは `?code&state&location&accounts-server`（拒否は `error=access_denied`）。`POST {accounts}/oauth/v2/token`（grant_type=authorization_code）は失敗しても HTTP 200 で `{"error": ...}` を返すので、`access_token` の有無で判定 | `app/services/zoho_login.py`, `app/routers/app_auth.py` |
@@ -67,6 +71,9 @@ H5d・H6・H7d はデスクトップ録音（入口C。Phase 2）を初めて動
 | A5 | Google Geocoding API（逆ジオコーディング） | `GET https://maps.googleapis.com/maps/api/geocode/json?latlng&language=ja&key` → `status`、`results[].address_components[]`（都道府県 `administrative_area_level_1`、市区町村・東京23区 `locality`、政令指定都市の区 `sublocality_level_1`（`ward` の種類は付かないことがある）、町 `sublocality_level_2`、丁目 `sublocality_level_3`） | `app/services/geocoding.py` |
 | A6 | Geocoding API のキーの作り方 | `gcloud services api-keys create --key-id --api-target=service=geocoding-backend.googleapis.com` と `gcloud services api-keys get-key-string <ID> --format='value(keyString)'`。**確認済み（2026-10-01、Cloud Shell）**：作れる。ただし `create` は終わったときの結果（`keyString` を含む）を**標準エラーに**出す（`>/dev/null` では消えず、キーの値が画面に出た）→ 出力ごと捨てる（`run_quietly`）。作り直し：gcloud にキーの値だけを作り直すコマンドは無く、新しいキーを作って古いキーを削除する（コンソールの「Rotate key」も同じ考え方）。削除は30日以内なら `gcloud services api-keys undelete <ID>` で戻せ、削除したキーは `list --show-deleted` でしか出ない（検索結果の抜粋）。`list --format='value(createTime,name)'` の形と、削除したキーの ID を使い直せるかは未確認（ID には作った日時を付けて重ならないようにした） | `scripts/setup_app_login.sh` |
 | A7 | スマホのブラウザの位置情報 | HTTPS で `navigator.geolocation.getCurrentPosition`（初回に許可を聞く。拒否は code 1）。iPhone の Chrome はアプリ自体の位置情報の許可も要る | `web/app/app.js` |
+| A8 | 先方担当者（連絡先）＝連絡先の複数選択ルックアップ（2026-10-02 追加） | 作成：`POST /settings/fields` に `data_type: multiselectlookup`・`multiselectlookup.connected_details`（参照先と逆向きの項目名）・`linking_details.module.plural_label`（zoho-crm-build の実測。別の組織で確認した形）。書き込み：商談記録の作成で `{"Customer_Contacts": [{"<中間モジュールの連絡先のルックアップ>": {"id": …}}]}`（検索結果の抜粋）。中間モジュールは `GET /settings/modules` の `generated_type: linking` のうち、商談記録と連絡先の両方をルックアップで参照しているものとして探す（バックエンドの `settings.*.READ` で読める想定）。中間モジュールへの書き込みが `ZohoCRM.modules.custom.ALL` で足りるか、エディションで使えるか（1モジュール2つまで、など）は未確認。断られたら紐づけを外して作り直す（録音は止めない） | `scripts/crm_setup.py`, `app/visits.py`, `app/routers/app_api.py` |
+| A9 | CRM のユーザーが今も有効か | バックエンドの接続（`ZohoCRM.users.READ`）で `GET /crm/v8/users/{id}` → `users[0].status`（`active` 以外は無効）。いないユーザーは 204 か 400 `INVALID_DATA` を想定 | `app/services/crm.py`, `app/deps.py` |
+| A10 | 90日のログインの Cookie | サーバーが付ける HttpOnly・Secure・SameSite=Lax の Cookie（同じサイト）。iPhone の Safari の追跡防止（スクリプトで付けた Cookie を7日で消す）には当たらない想定 | `app/routers/app_auth.py` |
 
 ## CRM の自動作成（scripts/crm_setup.py）
 

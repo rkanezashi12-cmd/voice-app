@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app import visits
 from app.deps import AppUserDep, RuntimeDep
-from app.errors import ConfigError
+from app.errors import ConfigError, ExternalServiceError
 from app.logs import log_event
 from app.pipeline.records import lookup_id
 from app.recording_token import RECORD_ID_RE, compute_expiry, issue
@@ -95,12 +95,21 @@ class VisitRequest(BaseModel):
     contacts: Annotated[
         list[Annotated[str, Field(min_length=1, max_length=60)]], Field(max_length=MAX_CONTACTS)
     ] = []
+    # 選んだ担当者のうち CRM の連絡先の ID（先方担当者（連絡先）に紐づける）
+    contact_ids: Annotated[list[str], Field(max_length=MAX_CONTACTS)] = []
 
     @field_validator("account_id")
     @classmethod
     def check_account_id(cls, value: str | None) -> str | None:
         if value is not None and not visits.ZOHO_ID_RE.match(value):
             raise ValueError("account_id の形式が不正です")
+        return value
+
+    @field_validator("contact_ids")
+    @classmethod
+    def check_contact_ids(cls, value: list[str]) -> list[str]:
+        if any(not visits.ZOHO_ID_RE.match(v) for v in value):
+            raise ValueError("contact_ids の形式が不正です")
         return value
 
 
@@ -123,17 +132,42 @@ async def create_visit(body: VisitRequest, user: AppUserDep, rt: RuntimeDep) -> 
         account_id = body.account_id
         account_name = str(account.get(fm.standard.account_name) or account_name)
     names = tuple(dict.fromkeys(n.strip() for n in body.contacts if n.strip()))
-    tz = ZoneInfo(cs.config.timezone)
+    # 紐づけるのは、その顧客企業の連絡先だと確かめられた人だけ
+    contact_ids: tuple[str, ...] = ()
+    if account_id and body.contact_ids:
+        allowed = {c["id"] for c in await visits.account_contacts(crm, fm, account_id)}
+        contact_ids = tuple(i for i in dict.fromkeys(body.contact_ids) if i in allowed)
+    link_field = await cs.contacts_link_field() if contact_ids else None
+    now = datetime.now(ZoneInfo(cs.config.timezone))
     visit = visits.NewVisit(
         owner_id=user.user_id,
         account_id=account_id,
         account_name=account_name,
         new_customer=body.new_customer,
         contacts=names,
+        contact_ids=contact_ids,
     )
-    record_id = await crm.create_record(
-        fm.meeting_record.module, visits.visit_record(visit, fm, datetime.now(tz))
-    )
+    module = fm.meeting_record.module
+    linked = len(contact_ids) if link_field else 0
+    try:
+        record_id = await crm.create_record(
+            module, visits.visit_record(visit, fm, now, link_field=link_field)
+        )
+    except ExternalServiceError as exc:
+        # 先方担当者（連絡先）の書き方・権限が合わずに断られても、録音は止めない（名前は「先方担当者」に残る）。
+        # 紐づけを外して1度だけ作り直す（docs/unverified-apis.md の A8）
+        if not linked or exc.status is None or not 400 <= exc.status < 500 or exc.status == 429:
+            raise
+        log_event(
+            logger,
+            "app.contacts_link_failed",
+            logging.WARNING,
+            client_id=user.client_id,
+            status=exc.status,
+            error_code=exc.code,
+        )
+        linked = 0
+        record_id = await crm.create_record(module, visits.visit_record(visit, fm, now))
     if not RECORD_ID_RE.match(record_id):
         raise ConfigError("商談記録の ID を受け取れませんでした")
     expires_at = compute_expiry(now=time.time(), start_at=None, ttl_hours=rt.settings.recording_url_ttl_hours)
@@ -153,6 +187,7 @@ async def create_visit(body: VisitRequest, user: AppUserDep, rt: RuntimeDep) -> 
         record_id=record_id,
         new_customer=body.new_customer,
         contacts=len(names),
+        linked_contacts=linked,
         dry_run=crm.dry_run,
     )
     return {"record_id": record_id, "recording_url": f"/recorder/#t={token}&app=1", "test": crm.dry_run}

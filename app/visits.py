@@ -172,6 +172,37 @@ async def account_contacts(crm: CrmService, fm: FieldMap, account_id: str) -> li
     return contacts
 
 
+async def find_contacts_link_field(crm: CrmService, fm: FieldMap) -> str | None:
+    """先方担当者（連絡先。複数選択ルックアップ）に書くときに使う、中間モジュールの「連絡先」のルックアップ項目の API 名。
+
+    書く形は {"<複数選択ルックアップ>": [{"<中間モジュールの連絡先のルックアップ>": {"id": …}}]}。
+    中間モジュールの名前は Zoho が決めるので、商談記録と連絡先の両方を参照している中間モジュールを探す。
+    項目がまだ無い（scripts/crm_setup.py を実行していない）ときは None。
+    """
+    f, s = fm.meeting_record, fm.standard
+    fields = await crm.list_fields(f.module)
+    if not any(
+        x.get("api_name") == f.contacts_link and x.get("data_type") == "multiselectlookup" for x in fields
+    ):
+        return None
+    for module in await crm.list_modules():
+        api_name = module.get("api_name")
+        if module.get("generated_type") != "linking" or not isinstance(api_name, str):
+            continue
+        lookups: dict[str, str] = {}
+        for x in await crm.list_fields(api_name):
+            target = ((x.get("lookup") or {}).get("module") or {}).get("api_name")
+            if (
+                x.get("data_type") == "lookup"
+                and isinstance(target, str)
+                and isinstance(x.get("api_name"), str)
+            ):
+                lookups[target] = x["api_name"]
+        if f.module in lookups and s.contacts_module in lookups:
+            return lookups[s.contacts_module]
+    return None
+
+
 @dataclass(frozen=True)
 class NewVisit:
     owner_id: str
@@ -179,10 +210,17 @@ class NewVisit:
     account_name: str
     new_customer: bool
     contacts: tuple[str, ...]
+    # 選んだ担当者のうち CRM の連絡先の ID（訪問先の連絡先だと確かめたもの）
+    contact_ids: tuple[str, ...] = ()
 
 
-def visit_record(visit: NewVisit, fm: FieldMap, now: datetime) -> dict[str, Any]:
-    """作る商談記録の中身。新規顧客は取引先を空のまま名前だけ残す（処理が終わると状態は「取引先未設定」）。"""
+def visit_record(
+    visit: NewVisit, fm: FieldMap, now: datetime, *, link_field: str | None = None
+) -> dict[str, Any]:
+    """作る商談記録の中身。新規顧客は取引先を空のまま名前だけ残す（処理が終わると状態は「取引先未設定」）。
+
+    link_field（中間モジュールの連絡先のルックアップ）が分かっていれば、選んだ連絡先を先方担当者（連絡先）に紐づける。
+    """
     f = fm.meeting_record
     label = f"{visit.account_name}{'（新規）' if visit.new_customer else ''} 訪問"
     data: dict[str, Any] = {
@@ -196,6 +234,8 @@ def visit_record(visit: NewVisit, fm: FieldMap, now: datetime) -> dict[str, Any]
         data[f.contact_name] = fmt.clip("、".join(visit.contacts), fm.limits.contact_name)
     if visit.account_id and not visit.new_customer:
         data[f.account] = {"id": visit.account_id}
+        if link_field and visit.contact_ids:
+            data[f.contacts_link] = [{link_field: {"id": cid}} for cid in visit.contact_ids]
     return data
 
 

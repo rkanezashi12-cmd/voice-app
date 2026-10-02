@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
+
 import pytest
 
 from app.web_session import (
@@ -35,6 +40,31 @@ def test_session_round_trip_keeps_japanese_name() -> None:
     assert token.isascii()
     assert verify_session(SECRET, token, now=NOW) == session()
     assert peek_client_id(token) == "default"
+
+
+def test_session_keeps_the_time_it_was_checked_against_crm() -> None:
+    checked = session(checked_at=NOW - 60)
+    assert verify_session(SECRET, issue_session(SECRET, checked), now=NOW).checked_at == NOW - 60
+
+
+def test_session_issued_by_the_previous_version_is_rechecked() -> None:
+    """確かめた時刻（"t"）の無い前の版の Cookie も使えるが、確かめた時刻は 0（次の操作で確かめ直す）。"""
+    body = (
+        base64.urlsafe_b64encode(
+            json.dumps(
+                {"v": 1, "k": "s", "c": "default", "u": "9001", "n": "x", "m": "y", "e": NOW + 3600},
+                separators=(",", ":"),
+            ).encode()
+        )
+        .rstrip(b"=")
+        .decode()
+    )
+    sig = (
+        base64.urlsafe_b64encode(hmac.new(SECRET, body.encode(), hashlib.sha256).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    assert verify_session(SECRET, f"{body}.{sig}", now=NOW).checked_at == 0
 
 
 def test_session_rejects_expired_tampered_and_other_keys() -> None:

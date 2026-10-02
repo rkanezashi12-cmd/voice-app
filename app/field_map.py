@@ -27,7 +27,9 @@ class MeetingRecordFields(_Frozen):
     capture_method: str = "Capture_Method"
     account: str = "Account"  # 取引先ルックアップ
     deal: str = "Deal"  # 商談ルックアップ
-    contact_name: str = "Contact_Name"
+    contact_name: str = "Contact_Name"  # 先方担当者の名前（「、」区切り。CRM に無い人の名前も入る）
+    # 先方担当者（連絡先）：連絡先の複数選択ルックアップ。CRM の連絡先から選んだ人を紐づける（docs/visit-app.md）
+    contacts_link: str = "Customer_Contacts"
     owner: str = "Owner"
     start_at: str = "Start_At"
     meeting_url: str = "Meeting_URL"

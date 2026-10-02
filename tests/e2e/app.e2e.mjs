@@ -275,6 +275,7 @@ await run("GPS の候補 → 担当者を複数選択・追加 → 録音画面�
     account_name: "株式会社サンプル鋳造",
     new_customer: false,
     contacts: ["田中 太郎", "山本 次郎", "鈴木 一郎"],
+    contact_ids: ["4001", "4002"],
   });
   assert.equal(await page.locator("#app-tab-report").getAttribute("href"), `/app/#report=${visit.id}`);
   await page.locator("#view-main").waitFor();
@@ -304,6 +305,7 @@ await run("顧客検索 → 新規顧客を訪問先にする", async (page) => 
     account_name: "有限会社みなと鋳物",
     new_customer: true,
     contacts: ["佐藤 花子"],
+    contact_ids: [],
   });
 });
 

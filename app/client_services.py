@@ -7,18 +7,27 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 
 import httpx
 
+from app import visits
 from app.clients import ClientConfig, SecretResolver
 from app.config import Settings
-from app.errors import ConfigError
+from app.errors import AppError, ConfigError
 from app.field_map import FieldMap
+from app.logs import log_event
 from app.services.crm import CrmService
 from app.services.geocoding import Geocoder
 from app.services.recall import RecallService
 from app.services.zoho_auth import ZohoAuth
 from app.services.zoho_login import ZohoLogin
+
+logger = logging.getLogger(__name__)
+
+# 先方担当者（連絡先）の中間モジュールが見つからないとき、探し直すまでの秒数（crm_setup.py で作れば、この時間で使い始める）
+CONTACTS_LINK_RETRY_SECONDS = 600
 
 
 class ClientServices:
@@ -44,6 +53,8 @@ class ClientServices:
         self._login = login
         self._geocoder = geocoder
         self._org_id: str | None = None
+        self._contacts_link: str | None = None
+        self._contacts_link_retry_at = 0.0
         self._lock = asyncio.Lock()
 
     @property
@@ -126,3 +137,33 @@ class ClientServices:
                 raise ConfigError("接続先の CRM の組織 ID を読めませんでした")
             self._org_id = org_id
         return self._org_id
+
+    async def contacts_link_field(self) -> str | None:
+        """先方担当者（連絡先）に書くときの、中間モジュールの連絡先のルックアップ項目の API 名（app/visits.py）。
+
+        見つかればプロセスの間使い回す。項目がまだ無い・読めないときは None（名前だけを書く）で、10分たったら探し直す。
+        """
+        if self._contacts_link is not None or time.monotonic() < self._contacts_link_retry_at:
+            return self._contacts_link
+        try:
+            found = await visits.find_contacts_link_field(await self.crm(), self.field_map)
+        except AppError as exc:
+            log_event(
+                logger,
+                "app.contacts_link_unavailable",
+                logging.WARNING,
+                client_id=self.client_id,
+                error_code=exc.code,
+            )
+            found = None
+        if found is None:
+            self._contacts_link_retry_at = time.monotonic() + CONTACTS_LINK_RETRY_SECONDS
+        else:
+            log_event(logger, "app.contacts_link_found", client_id=self.client_id)
+        self._contacts_link = found
+        return found
+
+    async def crm_user_active(self, user_id: str) -> bool:
+        """CRM のユーザーが今も有効か（バックエンドの接続で確かめる）。いなければ False。Zoho に届かないときは例外。"""
+        user = await (await self.crm()).get_user(user_id)
+        return user is not None and str(user.get("status") or "").lower() == "active"

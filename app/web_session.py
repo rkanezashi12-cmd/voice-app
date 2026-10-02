@@ -34,6 +34,8 @@ class AppSession:
     name: str
     email: str
     expires_at: int
+    # 最後に「CRM の有効なユーザー」と確かめた時刻（ログインした時刻。その後は app/deps.py が12時間ごとに確かめ直す）
+    checked_at: int = 0
 
 
 def _b64e(data: bytes) -> str:
@@ -100,6 +102,7 @@ def issue_session(secret: bytes, session: AppSession) -> str:
             "n": session.name[:100],
             "m": session.email[:200],
             "e": int(session.expires_at),
+            "t": int(session.checked_at),
         },
     )
 
@@ -117,6 +120,8 @@ def verify_session(secret: bytes, token: str, *, now: float) -> AppSession:
         name=str(payload.get("n") or ""),
         email=str(payload.get("m") or ""),
         expires_at=payload["e"],
+        # 確かめた時刻の無い Cookie（前の版で発行したもの）は、次の操作で確かめ直す
+        checked_at=payload["t"] if isinstance(payload.get("t"), int) else 0,
     )
 
 

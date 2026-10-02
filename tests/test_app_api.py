@@ -2,20 +2,37 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from datetime import datetime
+from http.cookies import SimpleCookie
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.deps import APP_REQUEST_HEADER, APP_REQUEST_VALUE
+from app import visits
+from app.client_services import ClientServices
+from app.clients import ClientRegistry
+from app.config import Settings
+from app.deps import APP_REQUEST_HEADER, APP_REQUEST_VALUE, SESSION_RECHECK_SECONDS
+from app.errors import ExternalServiceError
 from app.recording_token import verify
 from app.runtime import Runtime
 from app.services.geocoding import Place
 from app.visits import coql_group
-from app.web_session import SESSION_COOKIE
-from tests.conftest import TOKEN_SECRET, F, FakeCrm, FakeGeocoder, app_session_cookie
+from app.web_session import SESSION_COOKIE, verify_session
+from tests.conftest import (
+    APP_USER_ID,
+    FM,
+    SESSION_SECRET,
+    TOKEN_SECRET,
+    F,
+    FakeCrm,
+    FakeGeocoder,
+    app_session_cookie,
+)
 
 WRITE_HEADERS = {APP_REQUEST_HEADER: APP_REQUEST_VALUE}
 
@@ -209,6 +226,7 @@ def test_create_visit_for_new_customer_keeps_name_only(logged_in: TestClient, cr
         ({"account_name": "x"}, 422),
         ({"account_id": "9999"}, 404),
         ({"account_id": "1' or '1"}, 422),
+        ({"account_id": "3001", "contact_ids": ["1' or '1"]}, 422),
     ],
 )
 def test_create_visit_validation(
@@ -300,3 +318,202 @@ def test_search_query_shape(logged_in: TestClient, crm: FakeCrm) -> None:
         "from Contacts where ((Last_Name like '%港南%' or First_Name like '%港南%') "
         "and Account_Name is not null) limit 30"
     )
+
+
+# ---- 先方担当者（連絡先）：連絡先の複数選択ルックアップ ----
+
+TWO_CONTACTS = [
+    {"id": "4001", "Last_Name": "田中", "First_Name": "太郎"},
+    {"id": "4002", "Last_Name": "山本", "First_Name": "次郎"},
+]
+
+
+def test_create_visit_links_only_contacts_of_the_account(
+    logged_in: TestClient, crm: FakeCrm, runtime: Runtime
+) -> None:
+    runtime.client_services("default").contacts_link = "Contact"
+    crm.add("Accounts", "3001", {"Account_Name": "株式会社サンプル鋳造"})
+    crm.coql_handler = lambda query: TWO_CONTACTS
+    res = logged_in.post(
+        "/api/app/visits",
+        json={
+            "account_id": "3001",
+            "contacts": ["田中 太郎", "鈴木 一郎"],
+            "contact_ids": ["4001", "4001", "5999"],
+        },
+        headers=WRITE_HEADERS,
+    )
+    assert res.status_code == 200
+    assert len(crm.writes) == 1, "紐づけも商談記録の作成1回で書く"
+    data = crm.writes[0][3]
+    assert data[F.contacts_link] == [{"Contact": {"id": "4001"}}], "その顧客企業の連絡先だけ。重複は1つに"
+    assert data[F.contact_name] == "田中 太郎、鈴木 一郎", "名前は手で足した人も含めて残す"
+    assert "Account_Name = '3001'" in crm.coql_queries[0]
+
+
+def test_create_visit_writes_names_only_until_the_field_exists(logged_in: TestClient, crm: FakeCrm) -> None:
+    crm.add("Accounts", "3001", {"Account_Name": "株式会社サンプル鋳造"})
+    crm.coql_handler = lambda query: TWO_CONTACTS
+    res = logged_in.post(
+        "/api/app/visits",
+        json={"account_id": "3001", "contacts": ["田中 太郎"], "contact_ids": ["4001"]},
+        headers=WRITE_HEADERS,
+    )
+    assert res.status_code == 200
+    data = crm.writes[0][3]
+    assert F.contacts_link not in data
+    assert data[F.contact_name] == "田中 太郎"
+
+
+def test_new_customer_has_no_contact_links(logged_in: TestClient, crm: FakeCrm, runtime: Runtime) -> None:
+    runtime.client_services("default").contacts_link = "Contact"
+    res = logged_in.post(
+        "/api/app/visits",
+        json={"account_name": "有限会社みなと鋳物", "new_customer": True, "contact_ids": ["4001"]},
+        headers=WRITE_HEADERS,
+    )
+    assert res.status_code == 200
+    assert F.contacts_link not in crm.writes[0][3]
+    assert crm.coql_queries == [], "新規顧客の連絡先は読まない"
+
+
+def test_create_visit_retries_once_without_links_when_crm_rejects_them(
+    logged_in: TestClient, crm: FakeCrm, runtime: Runtime, caplog: pytest.LogCaptureFixture
+) -> None:
+    """紐づけの書き方・権限が合わずに断られても、録音は止めない（名前は先方担当者に残る）。"""
+    runtime.client_services("default").contacts_link = "Contact"
+    crm.add("Accounts", "3001", {"Account_Name": "株式会社サンプル鋳造"})
+    crm.coql_handler = lambda query: TWO_CONTACTS
+    crm.reject_create = lambda data: (
+        ExternalServiceError("zoho_crm", "invalid data", status=400, code="INVALID_DATA")
+        if F.contacts_link in data
+        else None
+    )
+    with caplog.at_level(logging.WARNING):
+        res = logged_in.post(
+            "/api/app/visits",
+            json={"account_id": "3001", "contacts": ["田中 太郎"], "contact_ids": ["4001"]},
+            headers=WRITE_HEADERS,
+        )
+    assert res.status_code == 200
+    assert len(crm.writes) == 1
+    assert F.contacts_link not in crm.writes[0][3]
+    assert crm.writes[0][3][F.contact_name] == "田中 太郎"
+    assert "app.contacts_link_failed" in caplog.text
+
+
+def test_create_visit_does_not_retry_on_server_errors(
+    logged_in: TestClient, crm: FakeCrm, runtime: Runtime
+) -> None:
+    runtime.client_services("default").contacts_link = "Contact"
+    crm.add("Accounts", "3001", {"Account_Name": "株式会社サンプル鋳造"})
+    crm.coql_handler = lambda query: TWO_CONTACTS
+    crm.reject_create = lambda data: ExternalServiceError("zoho_crm", "down", status=503, retryable=True)
+    res = logged_in.post(
+        "/api/app/visits",
+        json={"account_id": "3001", "contacts": ["田中 太郎"], "contact_ids": ["4001"]},
+        headers=WRITE_HEADERS,
+    )
+    assert res.status_code == 502, "5xx は作り直さずにエラーを返す"
+    assert crm.writes == []
+
+
+async def test_find_contacts_link_field(crm: FakeCrm) -> None:
+    assert await visits.find_contacts_link_field(crm, FM) is None, "項目がまだ無い"
+    crm.settings_fields[F.module] = [{"api_name": F.contacts_link, "data_type": "multiselectlookup"}]
+    crm.modules = [
+        {"api_name": "Accounts", "generated_type": "default"},
+        {"api_name": "DealsXProducts", "generated_type": "linking"},
+        {"api_name": "LinkingModule3", "generated_type": "linking"},
+    ]
+
+    def lookup(api_name: str, module: str) -> dict[str, Any]:
+        return {"api_name": api_name, "data_type": "lookup", "lookup": {"module": {"api_name": module}}}
+
+    crm.settings_fields["DealsXProducts"] = [lookup("Deal", "Deals"), lookup("Product", "Products")]
+    crm.settings_fields["LinkingModule3"] = [
+        lookup("Meeting_Record", F.module),
+        lookup("Contact", "Contacts"),
+    ]
+    assert await visits.find_contacts_link_field(crm, FM) == "Contact"
+
+
+async def test_contacts_link_field_is_cached_and_retried_later(
+    crm: FakeCrm, registry: ClientRegistry, settings: Settings
+) -> None:
+    cs = ClientServices(registry.get("default"), settings, None, None, crm=crm)  # type: ignore[arg-type]
+    assert await cs.contacts_link_field() is None
+    reads = len(crm.settings_reads)
+    assert await cs.contacts_link_field() is None
+    assert len(crm.settings_reads) == reads, "見つからなくても、しばらくは探し直さない"
+    crm.settings_fields[F.module] = [{"api_name": F.contacts_link, "data_type": "multiselectlookup"}]
+    crm.modules = [{"api_name": "Link1", "generated_type": "linking"}]
+    crm.settings_fields["Link1"] = [
+        {"api_name": "MR", "data_type": "lookup", "lookup": {"module": {"api_name": F.module}}},
+        {"api_name": "Contact", "data_type": "lookup", "lookup": {"module": {"api_name": "Contacts"}}},
+    ]
+    cs._contacts_link_retry_at = 0  # 10分たった
+    assert await cs.contacts_link_field() == "Contact"
+    reads = len(crm.settings_reads)
+    assert await cs.contacts_link_field() == "Contact"
+    assert len(crm.settings_reads) == reads, "見つかったら使い回す"
+
+
+async def test_crm_user_active(crm: FakeCrm, registry: ClientRegistry, settings: Settings) -> None:
+    cs = ClientServices(registry.get("default"), settings, None, None, crm=crm)  # type: ignore[arg-type]
+    crm.users = {"1": {"id": "1", "status": "active"}, "2": {"id": "2", "status": "deactive"}}
+    assert await cs.crm_user_active("1") is True
+    assert await cs.crm_user_active("2") is False
+    assert await cs.crm_user_active("3") is False, "削除されたユーザー"
+
+
+# ---- ログインは90日。12時間ごとに CRM の有効なユーザーかを確かめ直す ----
+
+
+def _new_session_cookie(res: Any) -> str | None:
+    for header in res.headers.get_list("set-cookie"):
+        jar = SimpleCookie()
+        jar.load(header)
+        if SESSION_COOKIE in jar:
+            return jar[SESSION_COOKIE].value
+    return None
+
+
+def test_recent_login_is_not_rechecked(client: TestClient, runtime: Runtime) -> None:
+    client.cookies.set(SESSION_COOKIE, app_session_cookie(checked_ago=60))
+    res = client.get("/api/app/me")
+    assert res.status_code == 200
+    assert runtime.client_services("default").user_checks == []
+    assert _new_session_cookie(res) is None
+
+
+def test_old_check_is_redone_and_cookie_refreshed(client: TestClient, runtime: Runtime) -> None:
+    client.cookies.set(
+        SESSION_COOKIE, app_session_cookie(ttl=80 * 86400, checked_ago=SESSION_RECHECK_SECONDS + 60)
+    )
+    res = client.get("/api/app/me")
+    assert res.status_code == 200
+    assert runtime.client_services("default").user_checks == [APP_USER_ID]
+    token = _new_session_cookie(res)
+    assert token, "確かめた時刻を入れ直した Cookie を渡す"
+    session = verify_session(SESSION_SECRET.encode(), token, now=time.time())
+    assert session.checked_at >= int(time.time()) - 5
+    assert session.expires_at > time.time() + 79 * 86400, (
+        "ログインの期限は延ばさない（最初のログインから数える）"
+    )
+
+
+def test_inactive_crm_user_is_logged_out(client: TestClient, runtime: Runtime) -> None:
+    runtime.client_services("default").user_active = False
+    client.cookies.set(SESSION_COOKIE, app_session_cookie(checked_ago=SESSION_RECHECK_SECONDS + 60))
+    res = client.get("/api/app/me")
+    assert res.status_code == 401
+    assert _new_session_cookie(res) == "", "Cookie を消す"
+
+
+def test_recheck_does_not_block_when_zoho_is_unreachable(client: TestClient, runtime: Runtime) -> None:
+    runtime.client_services("default").user_active = ExternalServiceError("zoho_crm", "down", status=503)
+    client.cookies.set(SESSION_COOKIE, app_session_cookie(checked_ago=SESSION_RECHECK_SECONDS + 60))
+    res = client.get("/api/app/me")
+    assert res.status_code == 200
+    assert _new_session_cookie(res) is None, "確かめられなかったので、次の操作でもう一度確かめる"

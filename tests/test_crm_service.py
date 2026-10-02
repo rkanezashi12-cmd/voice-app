@@ -214,3 +214,36 @@ async def test_coql_and_list(respx_mock: respx.MockRouter) -> None:
         assert await crm.coql("select id from MeetingRecords where Recall_ID = 'x' limit 1") == [{"id": "1"}]
         assert [r["Term"] for r in await crm.list_records("Glossary", ["Term"])] == ["A", "B"]
     assert json.loads(coql.calls[0].request.content)["select_query"].startswith("select id")
+
+
+async def test_settings_reads_and_user(respx_mock: respx.MockRouter) -> None:
+    token_route(respx_mock)
+    respx_mock.get(f"{US_API}/settings/modules").mock(
+        return_value=httpx.Response(
+            200, json={"modules": [{"api_name": "Link1", "generated_type": "linking"}]}
+        )
+    )
+    fields = respx_mock.get(f"{US_API}/settings/fields").mock(
+        return_value=httpx.Response(200, json={"fields": [{"api_name": "Contact", "data_type": "lookup"}]})
+    )
+    respx_mock.get(f"{US_API}/users/1").mock(
+        return_value=httpx.Response(200, json={"users": [{"id": "1", "status": "active"}]})
+    )
+    respx_mock.get(f"{US_API}/users/2").mock(return_value=httpx.Response(204))
+    respx_mock.get(f"{US_API}/users/3").mock(
+        return_value=httpx.Response(
+            400, json={"code": "INVALID_DATA", "message": "invalid id", "status": "error"}
+        )
+    )
+    respx_mock.get(f"{US_API}/users/4").mock(return_value=httpx.Response(503))
+    async with httpx.AsyncClient() as http:
+        crm = make_crm(http)
+        assert await crm.list_modules() == [{"api_name": "Link1", "generated_type": "linking"}]
+        assert await crm.list_fields("Link1") == [{"api_name": "Contact", "data_type": "lookup"}]
+        assert fields.calls[0].request.url.params["module"] == "Link1"
+        assert await crm.get_user("1") == {"id": "1", "status": "active"}
+        assert await crm.get_user("2") is None, "いないユーザー"
+        assert await crm.get_user("3") is None, "ID が違う"
+        assert await crm.get_user("../org") is None, "数字以外の ID では問い合わせない"
+        with pytest.raises(ExternalServiceError):
+            await crm.get_user("4")

@@ -199,6 +199,35 @@ class CrmService:
         org = self._json(resp).get("org")
         return org[0] if isinstance(org, list) and org and isinstance(org[0], dict) else {}
 
+    async def list_modules(self) -> list[dict[str, Any]]:
+        """モジュールの設定（GET /settings/modules。api_name・plural_label・generated_type など）。"""
+        resp = await self._request("GET", "/settings/modules")
+        if resp.status_code >= 400:
+            raise error_from_response("zoho_crm", resp, "モジュールの設定の取得に失敗しました")
+        return [m for m in self._json(resp).get("modules", []) if isinstance(m, dict)]
+
+    async def list_fields(self, module: str) -> list[dict[str, Any]]:
+        """項目の設定（GET /settings/fields?module=…。api_name・data_type・lookup など）。"""
+        resp = await self._request("GET", "/settings/fields", params={"module": module})
+        if resp.status_code >= 400:
+            raise error_from_response("zoho_crm", resp, "項目の設定の取得に失敗しました")
+        return [f for f in self._json(resp).get("fields", []) if isinstance(f, dict)]
+
+    async def get_user(self, user_id: str) -> dict[str, Any] | None:
+        """CRM のユーザー（users[0]。id・status など）。いない（削除済み・ID が違う）ときは None。"""
+        if not user_id.isdigit():
+            return None
+        resp = await self._request("GET", f"/users/{user_id}")
+        if resp.status_code in (204, 404):
+            return None
+        if resp.status_code >= 400:
+            error = error_from_response("zoho_crm", resp, "ユーザーの取得に失敗しました")
+            if resp.status_code == 400 and error.code == "INVALID_DATA":
+                return None
+            raise error
+        users = self._json(resp).get("users")
+        return users[0] if isinstance(users, list) and users and isinstance(users[0], dict) else None
+
     async def coql(self, query: str) -> list[dict[str, Any]]:
         resp = await self._request("POST", "/coql", json={"select_query": query})
         if resp.status_code == 204:
