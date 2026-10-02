@@ -438,6 +438,29 @@ async def test_find_contacts_link_field(crm: FakeCrm) -> None:
     assert await visits.find_contacts_link_field(crm, FM) == "Contact"
 
 
+async def test_find_contacts_link_field_from_the_field_settings(crm: FakeCrm) -> None:
+    """2026-10-02 にお客様の CRM で作った項目の設定（show-fields の出力）から読む。モジュールの一覧は読まない。"""
+    crm.settings_fields[F.module] = [
+        {
+            "api_name": F.contacts_link,
+            "data_type": "multiselectlookup",
+            "multiselectlookup": {
+                "linking_details": {
+                    "module": {"visibility": 2, "plural_label": "商談記録 X 顧客担当者", "api_name": "X"},
+                    "lookup_field": {"api_name": "field3", "field_label": "商談記録"},
+                    "connected_lookup_field": {"api_name": "field3_1", "field_label": "先方担当者（連絡先）"},
+                },
+                "connected_details": {
+                    "field": {"api_name": "field3", "field_label": "商談記録"},
+                    "module": {"plural_label": "顧客担当者", "api_name": "Contacts"},
+                },
+            },
+        }
+    ]
+    assert await visits.find_contacts_link_field(crm, FM) == "field3_1"
+    assert crm.settings_reads == [f"fields:{F.module}"]
+
+
 async def test_contacts_link_field_is_cached_and_retried_later(
     crm: FakeCrm, registry: ClientRegistry, settings: Settings
 ) -> None:

@@ -99,8 +99,9 @@ def simple(label: str, api: str, data_type: str) -> dict[str, Any]:
 def multiselect_lookup(
     label: str, api: str, module: str, reverse_label: str, linking_label: str
 ) -> dict[str, Any]:
-    """複数選択ルックアップ。Zoho が中間モジュール（linking_label）を作り、参照先（module）に
-    逆向きの項目（reverse_label）と関連リストを足す（形は zoho-crm-build の実測リファレンス）。"""
+    """複数選択ルックアップ。Zoho が中間モジュールを作り、参照先（module）に逆向きの項目（reverse_label）と
+    関連リストを足す（形は zoho-crm-build の実測リファレンス）。中間モジュールの名前は linking_label を渡しても使われず、
+    Zoho が「<親> X <参照先>」と付けた（2026-10-02 実測）。"""
     return {
         "field_label": label,
         "api_name": api,
@@ -309,20 +310,11 @@ def check_org(org: dict[str, Any], expected: dict[str, str]) -> None:
             )
 
 
-def check_multiselect_lookup(api: Any, modules: list[dict[str, Any]], fs: dict[str, Any]) -> None:
-    """複数選択ルックアップを作る前に、Zoho が自動で作るもの（中間モジュール・参照先の逆向きの項目）と
-    同じ名前のものが無いことを確かめる（読み取りだけ）。"""
+def check_multiselect_lookup(api: Any, fs: dict[str, Any]) -> None:
+    """複数選択ルックアップを作る前に、Zoho が参照先に足す逆向きの項目と同じ表示名の項目が無いことを確かめる（読み取りだけ）。"""
     msl = fs["multiselectlookup"]
     target = msl["connected_details"]["module"]["api_name"]
     reverse = msl["connected_details"]["field"]["field_label"]
-    linking = msl["linking_details"]["module"]["plural_label"]
-    taken = [
-        m.get("api_name") for m in modules if linking in (m.get("plural_label"), m.get("singular_label"))
-    ]
-    if taken:
-        raise SetupError(
-            f"中間モジュールの名前「{linking}」のモジュール（{taken}）が既にあります。中止します。"
-        )
     fields = (api.request("GET", "/crm/v8/settings/fields", {"module": target}) or {}).get("fields", [])
     same = [f.get("api_name") for f in fields if f.get("field_label") == reverse]
     if same:
@@ -348,7 +340,7 @@ def build_plan(api: Any, spec: list[ModuleSpec]) -> Plan:
         if existing is None:
             for fs in ms.fields:
                 if fs["data_type"] == "multiselectlookup":
-                    check_multiselect_lookup(api, modules, fs)
+                    check_multiselect_lookup(api, fs)
             plan.create_modules.append(ms)
             plan.create_fields[ms.api_name] = list(ms.fields)
             continue
@@ -375,7 +367,7 @@ def build_plan(api: Any, spec: list[ModuleSpec]) -> Plan:
                 )
         for fs in missing:
             if fs["data_type"] == "multiselectlookup":
-                check_multiselect_lookup(api, modules, fs)
+                check_multiselect_lookup(api, fs)
         plan.create_fields[ms.api_name] = missing
     return plan
 
@@ -391,7 +383,7 @@ def describe(plan: Plan) -> str:
                 msl = f["multiselectlookup"]
                 target = msl["connected_details"]["module"]["api_name"]
                 lines.append(
-                    f"  → Zoho が中間モジュール「{msl['linking_details']['module']['plural_label']}」を作り、"
+                    "  → Zoho が中間モジュール（名前は Zoho が決める）を作り、"
                     f"{target} に項目「{msl['connected_details']['field']['field_label']}」と関連リストを足します"
                     f"（{target} のデータは書き換えません）"
                 )

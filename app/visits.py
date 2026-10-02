@@ -176,15 +176,27 @@ async def find_contacts_link_field(crm: CrmService, fm: FieldMap) -> str | None:
     """先方担当者（連絡先。複数選択ルックアップ）に書くときに使う、中間モジュールの「連絡先」のルックアップ項目の API 名。
 
     書く形は {"<複数選択ルックアップ>": [{"<中間モジュールの連絡先のルックアップ>": {"id": …}}]}。
-    中間モジュールの名前は Zoho が決めるので、商談記録と連絡先の両方を参照している中間モジュールを探す。
+    項目の設定の linking_details.connected_lookup_field に書いてある（2026-10-02 にお客様の CRM で確かめた形）。
+    書いていなければ、商談記録と連絡先の両方を参照している中間モジュール（名前は Zoho が決める）を探す。
     項目がまだ無い（scripts/crm_setup.py を実行していない）ときは None。
     """
     f, s = fm.meeting_record, fm.standard
     fields = await crm.list_fields(f.module)
-    if not any(
-        x.get("api_name") == f.contacts_link and x.get("data_type") == "multiselectlookup" for x in fields
-    ):
+    field = next(
+        (
+            x
+            for x in fields
+            if x.get("api_name") == f.contacts_link and x.get("data_type") == "multiselectlookup"
+        ),
+        None,
+    )
+    if field is None:
         return None
+    msl = field.get("multiselectlookup") or {}
+    connected = ((msl.get("connected_details") or {}).get("module") or {}).get("api_name")
+    link = ((msl.get("linking_details") or {}).get("connected_lookup_field") or {}).get("api_name")
+    if connected == s.contacts_module and isinstance(link, str) and link:
+        return link
     for module in await crm.list_modules():
         api_name = module.get("api_name")
         if module.get("generated_type") != "linking" or not isinstance(api_name, str):
