@@ -44,3 +44,5 @@ jobs:
         run: node tests/e2e/recorder.e2e.mjs
       - name: E2E (visit app)
         run: node tests/e2e/app.e2e.mjs
+      - name: E2E (CRM widget)
+        run: node tests/e2e/widget.e2e.mjs

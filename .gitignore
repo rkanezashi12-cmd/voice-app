@@ -16,3 +16,6 @@ config/clients.local.json
 config/*.local.yaml
 *.local.json
 .DS_Store
+
+# scripts/build_widget.py が作る ZIP
+dist/

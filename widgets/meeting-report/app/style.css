@@ -1,0 +1,324 @@
+/* 商談日報ウィジェット（CRM の商談記録の画面の関連リスト） */
+:root {
+  --text: #1f2933;
+  --muted: #5f6b7a;
+  --line: #e3e8ef;
+  --bg: #ffffff;
+  --soft: #f6f8fb;
+  --primary: #0f3c68;
+  --done: #1f7a4d;
+  --failed: #b42318;
+  --processing: #9a6700;
+  --waiting: #5f6b7a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+#root {
+  padding: 16px;
+}
+
+h1,
+h2,
+p,
+dl,
+dd,
+ol {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.ghost {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--soft);
+}
+
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--primary);
+  text-align: left;
+}
+
+.link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link:disabled {
+  color: var(--text);
+  opacity: 1;
+}
+
+.message {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--muted);
+}
+
+.message.error {
+  background: #fef3f2;
+  color: var(--failed);
+}
+
+/* ---- 見出し ---- */
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.title-row h1 {
+  font-size: 18px;
+  font-weight: 700;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.badge {
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--waiting);
+  white-space: nowrap;
+}
+
+.badge.done {
+  background: var(--done);
+}
+
+.badge.failed {
+  background: var(--failed);
+}
+
+.badge.processing {
+  background: var(--processing);
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px 16px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--soft);
+  border-radius: 8px;
+}
+
+.meta dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.meta dd {
+  overflow-wrap: anywhere;
+}
+
+/* ---- 日報 ---- */
+
+.notice {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-left: 4px solid var(--waiting);
+  background: var(--soft);
+  border-radius: 0 8px 8px 0;
+}
+
+.notice.failed {
+  border-color: var(--failed);
+  background: #fef3f2;
+}
+
+.notice.processing {
+  border-color: var(--processing);
+  background: #fff8e6;
+}
+
+.sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sections:empty {
+  display: none;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.card-summary {
+  grid-column: 1 / -1;
+  border-color: #c9d6e6;
+  background: #f7faff;
+}
+
+.card h2 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.card .body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- 文字起こし全文 ---- */
+
+.transcript {
+  margin-top: 16px;
+}
+
+.transcript-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.transcript-head h2 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.search input {
+  width: 220px;
+  max-width: 50vw;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.count {
+  min-width: 4em;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.utterances {
+  list-style: none;
+  padding: 0;
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.utterance {
+  padding: 8px 14px 8px 12px;
+  border-left: 4px solid var(--line);
+}
+
+.utterance + .utterance {
+  border-top: 1px solid var(--soft);
+}
+
+.speaker {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.said {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.spk-0 {
+  border-left-color: #0f3c68;
+}
+.spk-0 .speaker {
+  color: #0f3c68;
+}
+.spk-1 {
+  border-left-color: #0f766e;
+}
+.spk-1 .speaker {
+  color: #0f766e;
+}
+.spk-2 {
+  border-left-color: #b45309;
+}
+.spk-2 .speaker {
+  color: #b45309;
+}
+.spk-3 {
+  border-left-color: #6d28d9;
+}
+.spk-3 .speaker {
+  color: #6d28d9;
+}
+.spk-4 {
+  border-left-color: #15803d;
+}
+.spk-4 .speaker {
+  color: #15803d;
+}
+.spk-5 {
+  border-left-color: #be185d;
+}
+.spk-5 .speaker {
+  color: #be185d;
+}
+
+mark {
+  background: #fff1a8;
+  color: inherit;
+  border-radius: 2px;
+}
+
+mark.current {
+  outline: 2px solid #e8a600;
+}
+
+.muted {
+  color: var(--muted);
+}

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>商談日報</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="root">
+      <p id="message" class="message" hidden></p>
+
+      <section id="report" hidden>
+        <header class="head">
+          <div class="title-row">
+            <h1 id="r-name"></h1>
+            <span id="r-state" class="badge"></span>
+            <button id="btn-reload" class="ghost" type="button">再読み込み</button>
+          </div>
+          <dl class="meta">
+            <div><dt>開始日時</dt><dd id="r-start"></dd></div>
+            <div><dt>商談形態</dt><dd id="r-type"></dd></div>
+            <div><dt>取引先</dt><dd><button id="r-account" class="link" type="button"></button></dd></div>
+            <div><dt>先方担当者</dt><dd id="r-contacts"></dd></div>
+            <div><dt>担当</dt><dd id="r-owner"></dd></div>
+            <div><dt>分類</dt><dd id="r-category"></dd></div>
+          </dl>
+        </header>
+
+        <p id="r-notice" class="notice" hidden></p>
+        <div id="r-sections" class="sections"></div>
+
+        <section class="transcript">
+          <div class="transcript-head">
+            <h2>文字起こし全文</h2>
+            <div class="search">
+              <input id="q" type="search" placeholder="言葉で検索" aria-label="文字起こしを言葉で検索" />
+              <span id="q-count" class="count" aria-live="polite"></span>
+              <button id="q-prev" class="ghost" type="button" aria-label="前の一致へ" disabled>▲</button>
+              <button id="q-next" class="ghost" type="button" aria-label="次の一致へ" disabled>▼</button>
+            </div>
+          </div>
+          <ol id="r-transcript" class="utterances"></ol>
+          <p id="r-transcript-empty" class="muted" hidden>文字起こしはまだありません。</p>
+        </section>
+      </section>
+    </main>
+
+    <!-- SDK と項目の API 名（field-map.js）は scripts/build_widget.py が ZIP に入れる -->
+    <script src="ZohoEmbededAppSDK.min.js"></script>
+    <script src="field-map.js"></script>
+    <script src="report.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>

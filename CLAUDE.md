@@ -10,7 +10,7 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 
 - 画面・データの正は **Zoho CRM**。Zoho Creator は使わない。DC はクライアント設定で切り替える
   （既定 US：`accounts.zoho.com` / `www.zohoapis.com`。デモ環境のお客様 CRM は US DC）
-  - スマホは Zoho CRM 公式アプリ、PC は CRM ウィジェット（別フェーズ）
+  - スマホは Zoho CRM 公式アプリ、PC は CRM ウィジェット（商談記録の画面の「商談日報」。読むだけ。docs/widget.md）
 - オンライン会議は **Recall.ai 東京リージョン** `https://ap-northeast-1.recall.ai`。会議ボットは自作しない
   - **オンライン商談は CRM から呼ぶボット（Meeting Bot API、入口A）で行う**（2026-10-01 のユーザーの判断）
   - Desktop Recording SDK（入口C。ボットを会議に入れない）は保留。バックエンドの受け口は実装済み
@@ -43,6 +43,7 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
    例外（2026-10-02 ユーザー了承）：商談記録の「先方担当者（連絡先）」（連絡先の複数選択ルックアップ）。Zoho が中間モジュールを作り、
    連絡先に逆向きの項目と関連リストを足す（連絡先のデータは書き換えない）。書き込むのは商談記録の作成だけ（docs/crm-setup.md の手順7）。
 7. **バックエンドが作るテスト用レコードは名前の先頭に【TEST】を付ける**（`CRM_TEST_RECORDS=true` が既定）。
+   本番運用では `scripts/go_live.sh` で `false` にする（ユーザーが時期を決める。テストの記録は CRM の画面で消す。docs/go-live.md）。
 8. Zoho の接続先は `app/clients.py` の DC 設定（`"dc": "us" | "jp" | …`）だけで決める。URL を直書きしない。
 9. プロンプトは `prompts/` のファイルで管理し、コードに埋め込まない。モデル名は環境変数。
 10. 4xx はリトライしない。429 / 5xx / 通信エラーは指数バックオフで最大3回。
@@ -99,8 +100,9 @@ web/recorder/          対面録音ページ（素の HTML/JS。ビルド不要�
 web/app/               録音アプリ（Zoho でログイン・訪問先と担当者の選択・GPS の候補・日報。素の HTML/JS）
 prompts/               transcribe.md / correct.md / summarize.md / schema.json
 crm/                   Deluge 関数の保管場所
-desktop/ widgets/      Phase 2 / 3
-tests/                 pytest（外部 API はモック）、tests/js と tests/e2e は録音ページ
+widgets/meeting-report/ PC の CRM の商談記録の画面に日報を出すウィジェット（ZIP は scripts/build_widget.py。docs/widget.md）
+desktop/               Phase 2
+tests/                 pytest（外部 API はモック）、tests/js と tests/e2e は録音ページ・録音アプリ・ウィジェット
 ```
 
 ## 5. 開発コマンド
@@ -112,4 +114,6 @@ pytest
 node --test tests/js/*.test.mjs            # 録音ページの純粋ロジック
 node tests/e2e/recorder.e2e.mjs            # Chromium の擬似マイクで録音ページを通しで確認
 node tests/e2e/app.e2e.mjs                 # 録音アプリ（/app/）を通しで確認（SCREENSHOT_DIR で画面も残せる）
+node tests/e2e/widget.e2e.mjs              # 商談日報ウィジェットを偽の Zoho SDK で確認
+python3 scripts/build_widget.py            # ウィジェットの ZIP を作る（dist/。Zoho の SDK を取りに行く）
 ```
