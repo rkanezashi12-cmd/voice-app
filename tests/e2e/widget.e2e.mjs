@@ -126,7 +126,8 @@ const FAKE_SDK = `
 function serve() {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
-    const name = url.pathname.replace(/^\/app\//, "");
+    // Zoho は ZIP の app/ を一番上の階層として置く（インデックスページは /index.html）
+    const name = url.pathname.replace(/^\//, "");
     const send = (type, body) => {
       res.writeHead(200, { "Content-Type": `${type}; charset=utf-8`, "Cache-Control": "no-cache" });
       res.end(body);
@@ -171,7 +172,7 @@ async function run(name, fake, fn) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   try {
-    await page.goto(`${origin}/app/index.html`);
+    await page.goto(`${origin}/index.html`);
     await fn(page);
     assert.deepEqual(errors, [], "ページのエラーが無い");
     results.push(`ok - ${name}`);

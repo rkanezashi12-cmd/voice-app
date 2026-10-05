@@ -66,4 +66,6 @@ def test_main_builds_with_a_local_sdk(tmp_path: Path, capsys: pytest.CaptureFixt
     sdk.write_bytes(FAKE_SDK)
     assert bw.main(["--sdk", str(sdk), "--output", str(tmp_path / "w.zip")]) == 0
     assert (tmp_path / "w.zip").exists()
-    assert "docs/widget.md" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "docs/widget.md" in out
+    assert "/index.html" in out, "インデックスページ（app/ からの相対）を案内する"
