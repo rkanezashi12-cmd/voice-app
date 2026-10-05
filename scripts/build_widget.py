@@ -4,6 +4,7 @@
 
     cd ~/voice-app && git pull && python3 scripts/build_widget.py
     → dist/meeting-report-widget.zip（CRM の 設定 → 開発者スペース → ウィジェット に登録する。手順は docs/widget.md）
+      登録のときのインデックスページは /index.html（Zoho は ZIP の app/ を一番上の階層として置く。2026-10-06 実測）
 
 - 項目の API 名・状態の表示値は app/field_map.py の既定値を読んで field-map.js にする（コードに直書きしない）
 - Zoho のウィジェット SDK は live.zwidgets.com から取って ZIP に入れる（CDN を読まないので CSP で止まらない）。
@@ -158,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         + str(out.relative_to(ROOT) if out.is_relative_to(ROOT) else out)
     )
     print("CRM への登録は docs/widget.md の手順2（設定 → 開発者スペース → ウィジェット）。")
+    print("インデックスページは /index.html（/app/ は付けない）。")
     return 0
 
 
