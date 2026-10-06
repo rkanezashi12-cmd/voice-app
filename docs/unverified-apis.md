@@ -145,6 +145,11 @@ Gemini の費用（2026-10-06、Cloud Billing の 9/28〜10/4 の SKU 別の実�
 - 音声約6分に対して出力が 76,260 トークンあり、大半が考えた分とみられる（考える量は既定の medium だった）→ H11 で low にした。対面録音は補正（全文の書き直し）も省いた（`CORRECT_GEMINI_TRANSCRIPTS`）
 - Gemini 以外（Cloud Run・Cloud Storage・Cloud Tasks・Secret Manager・Artifact Registry・Cloud Build・Geocoding）はどれも無料枠の中
 
+Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.sh`、2026-10-06 追加。検索結果の抜粋で確かめた形）：
+
+- `gcloud artifacts repositories set-cleanup-policies <リポジトリ> --location --policy=<JSON ファイル> --no-dry-run`。JSON は `[{"name", "action": {"type": "Keep"}, "mostRecentVersions": {"keepCount": 5}}, {"name", "action": {"type": "Delete"}, "condition": {"olderThan": "604800s"}}]`。Keep と Delete の両方に当てはまる版は残る（Keep が優先）。削除は1日に1回ほどの裏の処理で行われる
+- `--source` のデプロイが作るリポジトリは `cloud-run-source-deploy`（請求の SKU に Artifact Registry Storage 0.35 GiB・月が出ている）。`describe` の `sizeBytes` で大きさが取れる想定（取れなければ大きさを出さずに進む）。実行後に `list-cleanup-policies` の表示と、翌日の大きさで確かめる
+
 ## 優先度：中（動くが挙動が変わる）
 
 | # | 項目 | 実装での想定 | 該当箇所 |

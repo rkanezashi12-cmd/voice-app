@@ -87,6 +87,10 @@ gcloud run deploy meeting-notes --project=$PROJECT --region=$REGION --source=. \
   各 API はアプリ側で認証する（X-API-Key / 録音トークン / Webhook 署名 / Cloud Tasks の OIDC）。
 - `--max-instances=3`：Zoho のアクセストークン発行回数の上限（10 分で 10 回）に掛からないように絞る。
 
+**古い版の自動削除（一度だけ）**：デプロイのたびに、Artifact Registry（`cloud-run-source-deploy`）にプログラムの版が溜まる。
+`bash scripts/setup_artifact_cleanup.sh` を一度実行すると、新しいほうから5版を残し、それより古く7日を過ぎた版を
+1日に1回ほど自動で消す（無料枠 0.5GB に収めるため。CRM の記録・音声には関係しない。残した5版までは昔の版に戻せる）。
+
 ### 1-4. サービス URL の設定と CORS
 
 ```bash
