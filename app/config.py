@@ -14,6 +14,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.errors import ConfigError
 
+# Gemini 3 系の thinking_level（空はモデルの既定）
+THINKING_LEVELS = ("", "minimal", "low", "medium", "high")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", case_sensitive=False)
@@ -61,6 +64,12 @@ class Settings(BaseSettings):
     gemini_model_text: str | None = None
     gemini_max_output_tokens: int = 32768
     gemini_temperature: float = 0.0
+    # Gemini が答える前に考える量（thinking_level）。処理ごとに minimal / low / medium / high、空ならモデルの既定
+    # （3.5 Flash は medium）。考えた分も出力として課金され、2026-10 の請求では出力の大半を占めた。
+    # 文字起こし・補正・要約は深い推論が要らないので low にする（minimal は Vertex AI で断られる報告がある）
+    gemini_thinking_transcribe: str = "low"
+    gemini_thinking_correct: str = "low"
+    gemini_thinking_summarize: str = "low"
 
     # 対面録音を Gemini に渡す単位（秒）と、区切りを無音位置に寄せる幅（秒）
     audio_segment_seconds: int = 1200
@@ -70,6 +79,9 @@ class Settings(BaseSettings):
     transcribe_concurrency: int = 1
     correct_chunk_chars: int = 6000
     correct_concurrency: int = 3
+    # 対面録音（Gemini の文字起こし）にも補正をかけるか。文字起こしの時点で用語辞書を渡しているので、
+    # 既定は省く（補正は全文を書き直すので、出力の費用が文字起こしと同じだけかかる）。ボット・デスクトップは常に補正する
+    correct_gemini_transcripts: bool = False
     glossary_cache_seconds: int = 600
     # これより古いボット状態通知（参加待ち・録音中など一時的な状態）は CRM に書かない
     status_event_max_age_minutes: int = 30
@@ -83,10 +95,28 @@ class Settings(BaseSettings):
             raise ValueError("GEMINI_LOCATION に global は使えません（リージョナルエンドポイントを使う）")
         return value.strip()
 
+    @field_validator("gemini_thinking_transcribe", "gemini_thinking_correct", "gemini_thinking_summarize")
+    @classmethod
+    def check_thinking_level(cls, value: str) -> str:
+        level = value.strip().lower()
+        if level not in THINKING_LEVELS:
+            raise ValueError(
+                "GEMINI_THINKING_* は minimal / low / medium / high のどれか（空ならモデルの既定）"
+            )
+        return level
+
     @field_validator("service_url")
     @classmethod
     def strip_trailing_slash(cls, value: str | None) -> str | None:
         return value.rstrip("/") if value else value
+
+    def thinking_level(self, task: str) -> str:
+        """処理（transcribe / correct / summarize）ごとの考える量。空ならモデルの既定のまま。"""
+        return {
+            "transcribe": self.gemini_thinking_transcribe,
+            "correct": self.gemini_thinking_correct,
+            "summarize": self.gemini_thinking_summarize,
+        }.get(task, "")
 
     def need(self, name: str) -> Any:
         """機能に必須の設定を取り出す。未設定なら ConfigError。"""

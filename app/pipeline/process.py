@@ -167,7 +167,13 @@ class ProcessRun:
         self._log("pipeline.transcribed", utterances=len(transcript.utterances), chars=transcript.char_count)
 
         ai = self.rt.ai
-        corrected = await ai.correct(transcript, glossary, ctx)
+        if self.source.kind == "web_recording" and not self.rt.settings.correct_gemini_transcripts:
+            # 対面録音は文字起こしの時点で用語辞書を使っている。補正は全文を書き直す（出力の費用が文字起こしと
+            # 同じだけかかる）ので省く。CORRECT_GEMINI_TRANSCRIPTS=true で戻せる
+            corrected = transcript
+            self._log("correct.skipped", reason="gemini_transcript")
+        else:
+            corrected = await ai.correct(transcript, glossary, ctx)
         summary = await ai.summarize(corrected, ctx, self.fm.category_choices)
         split = fmt.split_transcript(corrected.to_text(), self.fm.limits.transcript)
         if split.truncated:

@@ -11,6 +11,7 @@
 | H5d | デスクトップ録音の Webhook（`sdk_upload.*`）の名前と本文 | 完了は `sdk_upload.complete`（公式ドキュメント）か `sdk_upload.completed`（Recall.ai のブログ）。両方受ける。本文の `data.sdk_upload.id` と `data.recording.id` | `app/pipeline/recall_flow.py`, `app/services/recall_events.py` |
 | H6 | デスクトップ SDK のアップロード | `POST /api/v1/sdk_upload/`（`metadata`・`recording_config`）→ `id`・`upload_token`。`GET /api/v1/sdk_upload/{id}/` に録音 ID（`recording.id` か `recording_id`）。作成時に `metadata` を受け付けるかは検索結果でも確認できていない | `app/services/recall.py` |
 | H7d | デスクトップ録音の削除 | `DELETE /api/v1/recording/{id}/`（検索結果の抜粋ではエンドポイントがある。実物ではまだ） | `app/services/recall.py` |
+| H11 | Gemini 3.5 Flash の考える量（2026-10-06 追加） | `GenerateContentConfig(thinking_config=ThinkingConfig(thinking_level="LOW"))`。3.5 Flash の値は MINIMAL・LOW・MEDIUM・HIGH で既定は MEDIUM、Gemini 3 系は数値の `thinking_budget` を使えない（検索結果の抜粋）。Vertex AI は Gemini 3 Flash で MINIMAL を `Thinking level is unsupported` で断り、LOW・MEDIUM・HIGH は通るという報告がある → 既定は LOW。考えた分は `usage_metadata.thoughts_token_count`（出力として課金）。Gemini 2.5 までには指定しない。デプロイ後の最初の処理で、`gemini.generated` の `考える量` が low のまま通り、`考えたトークン` が出ることを確かめる | `app/services/gemini.py`, `app/config.py` |
 | H8 | COQL の書き方 | `Email like '%@domain'`、ルックアップ先の名前 `Account_Name.Account_Name`、カスタムモジュールへの `where Recall_ID = '...'` | `app/routers/desktop.py`, `app/pipeline/records.py` |
 
 H5d・H6・H7d はデスクトップ録音（入口C。Phase 2）を初めて動かすときに確かめる。
@@ -136,6 +137,13 @@ A8（先方担当者（連絡先）の紐づけ）も、項目を作ったあと
 - D4 `zoho.crm.getRecordById` で読んだ日時項目（開始日時）を `toString()` してバックエンドに渡すと、タイムゾーン込みの正しい時刻として読めた。
   開始日時 2026/9/30 18:00 の記録で、録音用URLの有効期限が 2026/10/1 18:00（日本時間。開始日時＋24時間）になった
   （Cloud Run の時刻は UTC なので、オフセットが無ければ9時間ずれる）
+
+Gemini の費用（2026-10-06、Cloud Billing の 9/28〜10/4 の SKU 別の実績。テスト数回・音声は合計約6分）：
+
+- 音声の入力は 11,437 トークンで ¥3。テキストの入力と同じ単価（$1.50／100万トークン）として計算が合う
+- 出力（Gemini 3.5 Flash Regional Text Output）は 76,260 トークンで ¥120（100万トークンあたり約1,570円）。3.5 Flash には考えた分の別の SKU が無く、出力に含まれる
+- 音声約6分に対して出力が 76,260 トークンあり、大半が考えた分とみられる（考える量は既定の medium だった）→ H11 で low にした。対面録音は補正（全文の書き直し）も省いた（`CORRECT_GEMINI_TRANSCRIPTS`）
+- Gemini 以外（Cloud Run・Cloud Storage・Cloud Tasks・Secret Manager・Artifact Registry・Cloud Build・Geocoding）はどれも無料枠の中
 
 ## 優先度：中（動くが挙動が変わる）
 

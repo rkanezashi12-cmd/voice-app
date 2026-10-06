@@ -48,7 +48,8 @@ cd ~/voice-app && bash scripts/issue_process_url.sh <商談記録の ID>
    | `recording.completed` | 録音ページから音声が届いた |
    | `tasks.enqueued` | 処理を順番待ちに積んだ |
    | `pipeline.transcribed` | 文字起こしができた（`文字数` に文字数） |
-   | `gemini.generated`（3回） | `処理` が transcribe・correct・summarize |
+   | `correct.skipped` | 対面録音なので補正を省いた（文字起こしで用語辞書を使っている。`CORRECT_GEMINI_TRANSCRIPTS`） |
+   | `gemini.generated`（2回） | `処理` が transcribe・summarize。`考える量` は low、`入力トークン`・`出力トークン`・`考えたトークン` が費用の元 |
    | `dry_run.skip`（3行） | `項目` が入っている行は CRM に書く予定だった項目（処理の開始時と終了時）、空の行は音声の削除。どれも `DRY_RUN` なので行っていない |
    | `pipeline.finished` | `状態` が `done` |
 
@@ -124,4 +125,5 @@ curl -s "$(gcloud run services describe meeting-notes --project=voice-ai-510014 
 | 録音ページに「処理が済んでいます」 | 処理済みの商談記録の録音用URLを開いた。新しい商談記録を作って録音する |
 | `pipeline.skipped_finished` | 処理済みの商談記録の音声が届いたので、処理せずに音声を消した（二重処理の防止） |
 | `correct.rejected` | 補正の結果が元の発言と大きく違うため、補正前の文字起こしを使った（処理は続く） |
+| `pipeline.failed` に gemini と 400 | `GEMINI_THINKING_*` の値をモデルが受け付けない（Vertex AI は `minimal` を断ることがある）。`low` に戻す |
 | `summarize.invalid_json` | 要約の形が崩れたので、要約だけ作り直した。2回続けて崩れると処理ごとやり直す（`pipeline.retry`） |

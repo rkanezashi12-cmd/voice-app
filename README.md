@@ -125,6 +125,8 @@ curl -s $SERVICE_URL/health   # {"status":"ok","dry_run":true}
 | `TASKS_BACKEND` | `cloud_tasks` | `local` にすると同じプロセスで処理（ローカル開発用） |
 | `GEMINI_LOCATION` | `asia-northeast1` | `global` は拒否する |
 | `GEMINI_MODEL_TRANSCRIBE` / `GEMINI_MODEL_TEXT` | なし | 対面録音の文字起こし用 / 補正・要約用のモデル名 |
+| `GEMINI_THINKING_TRANSCRIBE` / `GEMINI_THINKING_CORRECT` / `GEMINI_THINKING_SUMMARIZE` | `low` | Gemini が答える前に考える量（`minimal`・`low`・`medium`・`high`。空ならモデルの既定で、3.5 Flash は `medium`）。考えた分も出力として課金される。Gemini 2.5 までのモデルには指定しない |
+| `CORRECT_GEMINI_TRANSCRIPTS` | `false` | 対面録音（Gemini の文字起こし）にも補正をかけるか。文字起こしで用語辞書を使うので既定は省く（補正は全文を書き直すので、出力の費用が文字起こしと同じだけかかる）。ボット・デスクトップは常に補正する |
 | `AUDIO_SEGMENT_SECONDS` | `1200` | 対面録音を Gemini に渡す単位（秒） |
 | `TRANSCRIBE_CONCURRENCY` | `1` | 1 なら区間を順に処理して話者ラベルをそろえる。長い録音で時間が足りなければ増やす |
 | `TRANSCRIPT_POLL_SECONDS` / `TRANSCRIPT_POLL_MAX` | `120` / `30` | Recall.ai の文字起こし完了を待つ間隔と回数 |

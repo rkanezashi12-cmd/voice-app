@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from typing import Any
 
@@ -39,7 +40,9 @@ def response(text: str, finish: str = "STOP") -> Any:
     return SimpleNamespace(
         text=text,
         candidates=[SimpleNamespace(finish_reason=SimpleNamespace(name=finish))],
-        usage_metadata=SimpleNamespace(prompt_token_count=10, candidates_token_count=5),
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=10, candidates_token_count=5, thoughts_token_count=7
+        ),
     )
 
 
@@ -80,8 +83,57 @@ async def test_generate_reports_truncation_and_usage() -> None:
     )
     assert result.text == "話者A: こんにちは"
     assert result.truncated is True
-    assert (result.input_tokens, result.output_tokens) == (10, 5)
+    assert (result.input_tokens, result.output_tokens, result.thinking_tokens) == (10, 5, 7), (
+        "考えた分のトークンも出力として課金されるので受け取る"
+    )
     assert models.calls[0]["model"] == "m"
+
+
+def test_thinking_level_matches_the_installed_sdk() -> None:
+    client = GeminiClient(make_settings())
+    config = client.build_config("指示", None, "low")
+    assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
+    assert client.build_config("指示", None).thinking_config is None, "空ならモデルの既定のまま"
+
+
+async def test_each_task_uses_its_thinking_level(caplog: pytest.LogCaptureFixture) -> None:
+    settings = make_settings(gemini_thinking_summarize="medium")
+    assert (settings.gemini_thinking_transcribe, settings.gemini_thinking_correct) == ("low", "low"), (
+        "既定は low（考えた分も出力として課金されるので、深い推論の要らない処理は抑える）"
+    )
+    fake, models = fake_client([response("a"), response("b"), response("c")])
+    client = GeminiClient(settings, client=fake)
+    with caplog.at_level(logging.INFO):
+        for task in ["transcribe", "correct", "summarize"]:
+            await client.generate(task=task, model="m", system_instruction="s", parts=[TextPart("x")])
+    levels = [c["config"].thinking_config.thinking_level for c in models.calls]
+    assert levels == [types.ThinkingLevel.LOW, types.ThinkingLevel.LOW, types.ThinkingLevel.MEDIUM]
+    logged = [r.fields for r in caplog.records if r.getMessage() == "gemini.generated"]
+    assert [(f["thinking"], f["thinking_tokens"]) for f in logged] == [
+        ("low", 7),
+        ("low", 7),
+        ("medium", 7),
+    ], "費用を確かめられるように、考える量と考えた分のトークン数をログに出す"
+
+
+async def test_older_models_get_no_thinking_level() -> None:
+    fake, models = fake_client([response("a"), response("b")])
+    client = GeminiClient(make_settings(), client=fake)
+    await client.generate(
+        task="correct", model="gemini-2.5-flash", system_instruction="s", parts=[TextPart("x")]
+    )
+    await client.generate(
+        task="correct", model="gemini-3.5-flash", system_instruction="s", parts=[TextPart("x")]
+    )
+    assert models.calls[0]["config"].thinking_config is None, "2.5 までは thinking_level を受け付けない"
+    assert models.calls[1]["config"].thinking_config.thinking_level == types.ThinkingLevel.LOW
+
+
+def test_thinking_level_settings_are_checked() -> None:
+    assert make_settings(gemini_thinking_correct=" LOW ").gemini_thinking_correct == "low"
+    assert make_settings(gemini_thinking_correct="").thinking_level("correct") == ""
+    with pytest.raises(ValueError):
+        make_settings(gemini_thinking_correct="max")
 
 
 def _api_error(code: int) -> Exception:
