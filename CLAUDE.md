@@ -82,7 +82,7 @@ ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ, ZohoCRM.org.READ
 Webhook（`POST /webhooks/recall`）は署名検証 → Cloud Tasks に積んで即 200。
 共通処理は `POST /internal/process`（Cloud Tasks から OIDC 認証で呼ぶ）。
 
-共通処理：補正（用語辞書を注入）→ 要約・構造化（JSON スキーマ固定）→
+共通処理：補正（用語辞書を注入。対面録音は文字起こしの時点で辞書を使うので既定で省く）→ 要約・構造化（JSON スキーマ固定）→
 CRM を1回で更新（要約・構造化項目・全文・状態）→ 音声削除。失敗時は CRM の状態を「失敗」にしてエラー内容を書く。
 
 ## 4. ディレクトリ

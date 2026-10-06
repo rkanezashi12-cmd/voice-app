@@ -11,7 +11,7 @@ from app.errors import ExternalServiceError
 from app.pipeline.process import ProcessRequest, run_process
 from app.runtime import Runtime
 from app.services.audio import AudioSegment
-from tests.conftest import F, FakeCrm, FakeLlm, FakeRecall, FakeStorage, FakeTasks, S
+from tests.conftest import F, FakeCrm, FakeLlm, FakeRecall, FakeStorage, FakeTasks, S, make_settings
 
 RECALL_TRANSCRIPT = [
     {"participant": {"id": 1, "name": "山田（当社）"}, "words": [{"text": "本日は"}, {"text": "ありがとうございます。"}]},
@@ -265,6 +265,40 @@ async def test_web_recording_flow(
     assert "前の区間の末尾" in transcribe_calls[1]["parts"][0].text, (
         "話者ラベルをそろえるため前区間の末尾を渡す"
     )
+    assert not [c for c in llm.calls if c["task"] == "correct"], (
+        "対面録音は文字起こしの時点で用語辞書を使うので、全文を書き直す補正は省く（費用を抑える）"
+    )
+
+
+async def test_web_recording_can_be_corrected_again(
+    runtime: Runtime,
+    crm: FakeCrm,
+    storage: FakeStorage,
+    llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime.settings = make_settings(correct_gemini_transcripts=True)
+    crm.add(F.module, "6002", meeting_record(**{F.meeting_type: "対面"}))
+    storage.objects["recordings/default/6002/1727488500123-a-abc123/000000.m4a"] = b"audio"
+
+    async def fake_prepare(
+        sessions: list[Any], download: Any, workdir: Any, **kwargs: Any
+    ) -> list[AudioSegment]:
+        return [AudioSegment(0, 0.0, 60.0, b"mp3")]
+
+    monkeypatch.setattr("app.services.audio.prepare_segments", fake_prepare)
+    llm.transcribe_outputs = ["話者A: 本日は丸三木型さんの件でお伺いしました。"]
+    llm.replace = {"丸三木型": "マルサン木型"}
+
+    outcome = await run_process(
+        runtime,
+        ProcessRequest(client_id="default", source="web_recording", record_id="6002"),
+        final_attempt=False,
+    )
+
+    assert outcome.status == "done"
+    assert [c["task"] for c in llm.calls] == ["transcribe", "correct", "summarize"]
+    assert crm.writes_to("6002")[-1][F.transcript] == "話者A: 本日はマルサン木型さんの件でお伺いしました。"
 
 
 async def test_web_recording_without_audio_fails(runtime: Runtime, crm: FakeCrm) -> None:
