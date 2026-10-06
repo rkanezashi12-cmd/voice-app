@@ -77,6 +77,15 @@ case "$1 $2" in
     fi ;;
   "secrets create") cat > "$SIM/store/$3" ;;
   "run services") [ "$3" != describe ] || cat "$SIM/service.json" ;;
+  "artifacts repositories")
+    case "$3" in
+      # リポジトリがあるときは $SIM/repo に大きさ（バイト）を置く
+      describe) [ -f "$SIM/repo" ] && cat "$SIM/repo" ;;
+      set-cleanup-policies)
+        for a in "$@"; do case "$a" in --policy=*) cp "${a#--policy=}" "$SIM/policy.json" ;; esac; done ;;
+      list-cleanup-policies) cat "$SIM/policy.json" ;;
+      *) echo "想定外の呼び出し: $*" >&2; exit 2 ;;
+    esac ;;
   "services enable") exit 0 ;;
   "services api-keys")
     case "$3" in
@@ -516,3 +525,57 @@ def test_go_live_rejects_unknown_arguments(recall_sim: Path) -> None:
     assert res.returncode == 1
     assert "使い方" in res.stderr
     assert _env_updates(recall_sim) == []
+
+
+# ---- setup_artifact_cleanup.sh：プログラムの古い版を自動で消す設定 ----
+
+
+def _cleanup_calls(sim: Path) -> list[list[str]]:
+    return [c for c in _gcloud_calls(sim) if c[:3] == ["artifacts", "repositories", "set-cleanup-policies"]]
+
+
+def test_artifact_cleanup_keeps_recent_versions_and_deletes_old_ones(recall_sim: Path) -> None:
+    (recall_sim / "repo").write_text("367001600", encoding="utf-8")
+    res = _run_script(recall_sim, "setup_artifact_cleanup.sh", ["yes"], LIVE_CLIENTS)
+    assert res.returncode == 0, res.stderr
+    assert "約 350 MB" in res.stdout, "今の大きさを出す"
+    policies = json.loads((recall_sim / "policy.json").read_text(encoding="utf-8"))
+    assert policies == [
+        {"name": "keep-recent", "action": {"type": "Keep"}, "mostRecentVersions": {"keepCount": 5}},
+        {"name": "delete-old", "action": {"type": "Delete"}, "condition": {"olderThan": "604800s"}},
+    ], "新しい5版は残し（Keep が優先）、それより古く7日を過ぎた版を消す"
+    (call,) = _cleanup_calls(recall_sim)
+    assert call[3] == "cloud-run-source-deploy", "deploy.sh（--source）が作るリポジトリ"
+    assert "--location=asia-northeast1" in call
+    assert "--no-dry-run" in call, "試しではなく本当に消す設定にする"
+
+
+def test_artifact_cleanup_cancel_changes_nothing(recall_sim: Path) -> None:
+    (recall_sim / "repo").write_text("367001600", encoding="utf-8")
+    res = _run_script(recall_sim, "setup_artifact_cleanup.sh", ["no"], LIVE_CLIENTS)
+    assert res.returncode == 1
+    assert "何も変えていません" in res.stderr
+    assert _cleanup_calls(recall_sim) == []
+
+
+def test_artifact_cleanup_needs_the_repository(recall_sim: Path) -> None:
+    res = _run_script(recall_sim, "setup_artifact_cleanup.sh", ["yes"], LIVE_CLIENTS)
+    assert res.returncode == 1
+    assert "見つかりません" in res.stderr
+    assert _cleanup_calls(recall_sim) == []
+
+
+def test_artifact_cleanup_keep_count_can_be_changed(
+    recall_sim: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (recall_sim / "repo").write_text("1", encoding="utf-8")
+    monkeypatch.setenv("KEEP_VERSIONS", "3")
+    res = _run_script(recall_sim, "setup_artifact_cleanup.sh", ["yes"], LIVE_CLIENTS)
+    assert res.returncode == 0, res.stderr
+    assert json.loads((recall_sim / "policy.json").read_text(encoding="utf-8"))[0]["mostRecentVersions"] == {
+        "keepCount": 3
+    }
+    monkeypatch.setenv("KEEP_VERSIONS", "0")
+    res = _run_script(recall_sim, "setup_artifact_cleanup.sh", ["yes"], LIVE_CLIENTS)
+    assert res.returncode == 1
+    assert "KEEP_VERSIONS" in res.stderr
