@@ -183,6 +183,11 @@ cd ~/voice-app && APP_CLIENT=monodemo ORG_ID=6719392000000020005 bash scripts/se
 
    `recording.url_issued` と `dry_run.skip` が出ていればよい。`auth.api_key_rejected` なら変数の API キーの貼り間違い
 
+商談記録・用語辞書は、デモ2の CRM ではメニュー（タブ）に出ない（この組織はタブグループを使っていて、新しいモジュールが
+どのグループにも入っていないため。グループに足すのは既存の設定の変更なので、するかはユーザーが決める）。次の URL で開く：
+商談記録 `https://crm.zoho.com/crm/monodemo2/tab/CustomModule13`、用語辞書 `https://crm.zoho.com/crm/monodemo2/tab/CustomModule14`
+（`/crm/` のあとは組織 ID ではなく domain の `monodemo2`）。関数の実行ログは、反映に数分かかる。
+
 ボットの予約は、手順9（Recall.ai の設定）が済むまで動かない（`recall` の設定が無いので、関数「ボットを予約」の実行ログにエラーが出る。
 CRM には何も書かない）。手順9まではボットの商談記録を作らない。
 
@@ -260,3 +265,8 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
   `monodemo-zoho-client-id` / `monodemo-zoho-client-secret` / `monodemo-zoho-refresh-token` に保存した。`dry_run: true` のまま。
   api-console の Generate Code の画面は「Code expiry duration」（既定 3 minutes。10 minutes に変える）・「Description」で、
   Description に `meeting-notes backend`（ハイフン入り）を入れたらエラーになった（エラーの文は未確認。記号を除いた説明文を案内して進めた）
+
+- 2026-10-15 00:13：手順6（変数・関数 `issue_recording_url`・ワークフロー「録音用URLの発行」）。テストの商談記録
+  「【TEST】録音URLの確認」で、バックエンドのログに `recording.url_issued`（client_id=monodemo）が出て、CRM の「録音用URL」は
+  空のまま（monodemo の `dry_run: true` が効いている。サービス全体の DRY_RUN は false）。CRM の関数の実行ログは数分遅れて出た。
+  関数の本文は `{` と `}` の間だけを置き換えると「Improper code format」になったので、1行目のシグネチャから全文を貼って保存した
