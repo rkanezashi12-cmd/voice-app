@@ -68,10 +68,10 @@ Cloud Shell では **Ctrl+C を押さない**（コピーではなく中止に�
 マルサン木型の動きは変わらない（マルサン木型のボットの通知は `metadata.client_id` が `default` なので、今までどおり処理される）。
 念のため、マルサン木型の商談（ボット・録音）の処理中は避ける。
 
-1. コードを取ってくる（PR をマージしたあと。main に入っていれば `git pull` で入る）
+1. コードを取ってくる（PR を既定のブランチ `claude/meeting-transcription-app-setup-nkaz1m` にマージしたあと）
 
    ```bash
-   cd ~/voice-app && git checkout main && git pull
+   cd ~/voice-app && git checkout claude/meeting-transcription-app-setup-nkaz1m && git pull
    ```
 
 2. **作業の前のマルサン木型の状態を控える**（読み取りだけ。`~/marusan-snapshot.json` ができる）
