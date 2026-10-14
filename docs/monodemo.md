@@ -274,3 +274,9 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
   （保存の前なので何も保存していない）。1〜2分おいて2回目で完了。`monodemo-app-login-client-id` / `monodemo-app-login-client-secret` /
   `monodemo-app-session-secret` / `monodemo-app-maps-api-key`（地図のキーは `monodemo-app-geocoding-20261014152750`）。
   録音アプリの URL は `https://meeting-notes-tnpxeypzla-an.a.run.app/app/?c=monodemo`。スクリプトは、有効な API を有効にし直さないように直した
+- 2026-10-15：手順8のやり直し。1回目に貼ったのは Self Client の Client ID・Secret だったため、ログインが「無効なリダイレクトURI」に
+  なった。API コンソールの「voice_day」はマルサン木型（default）のログイン用クライアント（同じ Zoho アカウントにある。触らない）。
+  デモ2用の Server-based Applications のクライアントを新しく作り、`setup_app_login.sh` で貼り直して（各シークレットの版2）ログインできた。
+  地図のキーも作り直した（`monodemo-app-geocoding-20261014152750` を削除。マルサン木型の `app-geocoding-…` は消していない）。
+  途中で、期限切れのログインが default の画面に戻ってログインが入れ替わる不具合が見つかり、直した（`app/routers/app_auth.py`）
+- 手順8の注意：API コンソールでは、Self Client・voice_day（マルサン木型）と取り違えないように、デモ2用のクライアントの名前で選ぶ
