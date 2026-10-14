@@ -251,3 +251,8 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
 - 2026-10-14：Zoho CRM のコネクタ（読み取り）で組織を確認（会社名・domain `monodemo2`・組織 ID・Asia/Tokyo・JPY・有料ライセンス1名）。
   商談記録（`MeetingRecords`）・用語辞書（`Glossary`）はまだ無い。既存のカスタムモジュールは Nippou・NippouLink・Inquiry・Repair・TEST・
   Claimmanagement・Deliveredproduct・CustomModule9・CustomModule12
+- 2026-10-14：手順1（デプロイ 68d328f）・手順2（`setup_client.sh`）。`marusan_snapshot.sh check` は各手順のあとで OK
+- 2026-10-14：手順3（Self Client。api-console.zoho.com、14 October 2026 作成）・手順4（`crm_setup.py apply`）。
+  商談記録・用語辞書と全項目が API 名どおりに作成された。デモ2の連絡先の表示名は「見込み客・担当者」で、
+  先方担当者（連絡先）の中間モジュールは「商談記録 X 見込み客・担当者」（API 名 `X`）、連絡先の逆向きの項目は `field20`
+  （表示名「商談記録」）、中間モジュールの連絡先のルックアップは `field20_1`
