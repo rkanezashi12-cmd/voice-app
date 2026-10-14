@@ -18,6 +18,9 @@ from app.recording_token import CLIENT_ID_RE
 
 SESSION_COOKIE = "mn_session"
 STATE_COOKIE = "mn_login_state"
+# ログインを始めたときのクライアント。期限切れなどで state を読めなかったときに、そのクライアントの画面に戻すのに使う
+# （値は信用せず、戻し先の URL にだけ使う）
+CLIENT_HINT_COOKIE = "mn_login_client"
 MAX_TOKEN_LENGTH = 2048
 _KIND_SESSION = "s"
 _KIND_STATE = "l"

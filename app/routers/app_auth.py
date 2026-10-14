@@ -25,6 +25,7 @@ from app.logs import log_event
 from app.recording_token import CLIENT_ID_RE
 from app.services.zoho_login import ZohoLoginError
 from app.web_session import (
+    CLIENT_HINT_COOKIE,
     SESSION_COOKIE,
     STATE_COOKIE,
     AppSession,
@@ -55,6 +56,12 @@ def _fail(client_id: str, reason: str) -> RedirectResponse:
     return resp
 
 
+def _hinted_client(request: Request) -> str:
+    """ログインを始めたときのクライアント（Cookie）。無い・形が違うときは default。"""
+    hint = request.cookies.get(CLIENT_HINT_COOKIE, "")
+    return hint if CLIENT_ID_RE.match(hint) else "default"
+
+
 @router.get("/login")
 async def login(rt: RuntimeDep, c: Annotated[str, Query(max_length=32)] = "default") -> RedirectResponse:
     if not CLIENT_ID_RE.match(c):
@@ -70,6 +77,8 @@ async def login(rt: RuntimeDep, c: Annotated[str, Query(max_length=32)] = "defau
     state = issue_state(secret, client_id=c, nonce=nonce, expires_at=int(time.time()) + STATE_TTL_SECONDS)
     resp = RedirectResponse(zoho_login.authorize_url(state), status_code=status.HTTP_302_FOUND)
     _cookie(resp, STATE_COOKIE, nonce, max_age=STATE_TTL_SECONDS, path="/auth")
+    # state を読めなかったとき（期限切れなど）に、別のクライアント（default）の画面に戻さないため。90日残す
+    _cookie(resp, CLIENT_HINT_COOKIE, c, max_age=90 * 24 * 3600, path="/auth")
     return resp
 
 
@@ -82,7 +91,9 @@ async def callback(
     error: Annotated[str | None, Query(max_length=200)] = None,
     accounts_server: Annotated[str | None, Query(alias="accounts-server", max_length=200)] = None,
 ) -> RedirectResponse:
-    client_id = "default"
+    # state を読めないときは、ログインを始めたときのクライアントの画面に戻す（複数のクライアントで、default の
+    # ログインに入れ替わってしまわないように）
+    client_id = _hinted_client(request)
     try:
         client_id = peek_client_id(state or "")
         cs = rt.client_services(client_id)
@@ -90,7 +101,7 @@ async def callback(
         verify_state(secret, state or "", nonce=request.cookies.get(STATE_COOKIE, ""), now=time.time())
     except (SessionError, ConfigError):
         # 期限切れ（ログイン画面で10分以上たった）・別のブラウザで開いた・書き換えられた、など
-        log_event(logger, "app.login_rejected", logging.WARNING, reason="expired")
+        log_event(logger, "app.login_rejected", logging.WARNING, client_id=client_id, reason="expired")
         return _fail(client_id, "expired")
     if error or not code:
         log_event(logger, "app.login_rejected", logging.WARNING, client_id=client_id, reason="denied")
