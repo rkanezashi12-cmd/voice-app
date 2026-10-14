@@ -35,6 +35,9 @@
 
 **各手順のあとで必ず次を実行し、`OK` が出ることを確かめる。** 違いが出たらそこで止めて、表示を送る。
 
+マルサン木型の改修は、これまでどおり行ってよい（`APP_CLIENT` を付けずにスクリプトを実行する）。わざとマルサン木型の設定・シークレットを
+変えたあとは、`bash scripts/marusan_snapshot.sh save` で控えを取り直す。
+
 ```bash
 cd ~/voice-app && bash scripts/marusan_snapshot.sh check
 ```
