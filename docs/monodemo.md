@@ -21,6 +21,24 @@
 - Recall.ai はマルサン木型と同じアカウント。**Recall.ai のダッシュボードに Webhook の送り先を足さない**
   （通知はボットの `metadata.client_id` で `monodemo` に振り分ける）
 
+## マルサン木型に影響しないための仕組み（必須）
+
+| 心配なこと | 仕組み |
+|---|---|
+| マルサン木型のシークレットを上書きする | `APP_CLIENT=monodemo` のスクリプトは `monodemo-…` のシークレットにだけ保存する。`default` には `APP_CLIENT` を付けない限り触らない |
+| 違う組織に接続してしまう | 接続スクリプトは `ORG_ID=6719392000000020005` でなければ何も保存せずに止まる |
+| マルサン木型の DRY_RUN・【TEST】が変わる | `monodemo` は自分の `dry_run`・`crm_test_records` を持つ。`client_mode.sh` は `default` を断る |
+| ボットの通知がマルサン木型側で処理される | 通知はボットの `metadata.client_id` で振り分ける。マルサン木型のボットは `default` のまま |
+| 設定を壊して Cloud Run が止まる | 設定はスクリプトが作るので手で書かない。もし新しい版が起動できなくても、Cloud Run は前の版（マルサン木型が動いている版）のまま動き続ける |
+| 録音アプリで違う会社の CRM に記録を作る | URL の会社（`?c=`）とログインの会社が違えば、ログインし直しになる |
+| 気づかないうちに変わる | `scripts/marusan_snapshot.sh` で、作業の前にマルサン木型の設定・シークレットの版・DRY_RUN を控え、各手順のあとで比べる（読み取りだけ） |
+
+**各手順のあとで必ず次を実行し、`OK` が出ることを確かめる。** 違いが出たらそこで止めて、表示を送る。
+
+```bash
+cd ~/voice-app && bash scripts/marusan_snapshot.sh check
+```
+
 ## 進め方
 
 | 手順 | やること | 場所 | 状態 |
@@ -48,12 +66,28 @@ Cloud Shell では **Ctrl+C を押さない**（コピーではなく中止に�
 
 クライアントごとのシークレット名・Webhook の振り分け・クライアントごとの DRY_RUN が入ったコードにする。
 マルサン木型の動きは変わらない（マルサン木型のボットの通知は `metadata.client_id` が `default` なので、今までどおり処理される）。
+念のため、マルサン木型の商談（ボット・録音）の処理中は避ける。
 
-```bash
-cd ~/voice-app && git pull && bash scripts/deploy.sh
-```
+1. コードを取ってくる（PR をマージしたあと。main に入っていれば `git pull` で入る）
 
-最後に `{"status":"ok",...}` と `デプロイしました` が出れば終わり。
+   ```bash
+   cd ~/voice-app && git checkout main && git pull
+   ```
+
+2. **作業の前のマルサン木型の状態を控える**（読み取りだけ。`~/marusan-snapshot.json` ができる）
+
+   ```bash
+   bash scripts/marusan_snapshot.sh save
+   ```
+
+3. デプロイする（環境変数は変えない）
+
+   ```bash
+   bash scripts/deploy.sh
+   ```
+
+   最後に `{"status":"ok",...}` と `デプロイしました` が出れば終わり
+4. `bash scripts/marusan_snapshot.sh check` → `OK` を確かめる
 
 ## 2. クライアント `monodemo` を足す（Cloud Shell、3分）
 

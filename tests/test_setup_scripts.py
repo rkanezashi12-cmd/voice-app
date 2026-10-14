@@ -80,8 +80,12 @@ case "$1 $2" in
   "secrets versions")
     if [ "$3" = access ]; then
       for a in "$@"; do case "$a" in --secret=*) cat "$SIM/store/${a#--secret=}" ;; esac; done
+    elif [ "$3" = list ]; then
+      # 版の番号は、保存した回数（$SIM/store/.ver-<名前>）。無ければ 1
+      echo "projects/p/secrets/$4/versions/$(cat "$SIM/store/.ver-$4" 2>/dev/null || echo 1)"
     else
       cat > "$SIM/store/$4"
+      echo $(( $(cat "$SIM/store/.ver-$4" 2>/dev/null || echo 1) + 1 )) > "$SIM/store/.ver-$4"
     fi ;;
   "secrets create") cat > "$SIM/store/$3" ;;
   "run services") [ "$3" != describe ] || cat "$SIM/service.json" ;;
@@ -858,3 +862,47 @@ def test_setup_recorder_test_refuses_to_run_again(recall_sim: Path) -> None:
     assert "初回専用" in res.stderr
     assert not any(c[:2] == ["run", "deploy"] for c in _gcloud_calls(recall_sim))
     assert _env_updates(recall_sim) == []
+
+
+# ---- marusan_snapshot.sh：マルサン木型（default）の設定が変わっていないかを確かめる ----
+
+
+def _snapshot(
+    sim: Path, mode: str, clients: dict, extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
+    env = {"SNAPSHOT": str(sim / "snapshot.json")}
+    return _run_script(
+        sim, "marusan_snapshot.sh", [], clients, extra_env=extra_env, args=(mode,), proc_env=env
+    )
+
+
+def test_marusan_snapshot_passes_when_only_monodemo_changes(recall_sim: Path) -> None:
+    for name in ("zoho-client-id", "recall-api-key"):
+        (recall_sim / "store" / name).write_text("x")
+    (recall_sim / "store" / "apikey-app-geocoding-20260101000000").write_text(OLD_KEY_CREATED)
+    assert _snapshot(recall_sim, "save", {"clients": {"default": MARUSAN}}).returncode == 0
+    saved = (recall_sim / "snapshot.json").read_text()
+    assert "x" not in json.loads(saved)["secret_versions"].values(), "シークレットの値は控えない"
+    # monodemo を足し、monodemo のシークレットと地図のキーを作っても OK
+    (recall_sim / "store" / "monodemo-zoho-client-id").write_text("y")
+    (recall_sim / "store" / "apikey-monodemo-app-geocoding-20261014000000").write_text(OLD_KEY_CREATED)
+    res = _snapshot(recall_sim, "check", _two_clients())
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "OK" in res.stdout
+    assert not [c for c in _gcloud_calls(recall_sim) if c[:3] == ["run", "services", "update"]], (
+        "読み取りだけ"
+    )
+
+
+def test_marusan_snapshot_detects_changes(recall_sim: Path) -> None:
+    (recall_sim / "store" / "zoho-refresh-token").write_text("x")
+    assert _snapshot(recall_sim, "save", {"clients": {"default": MARUSAN}}).returncode == 0
+    # default のシークレットに新しい版が足された・設定が変わった・DRY_RUN が変わった
+    (recall_sim / "store" / ".ver-zoho-refresh-token").write_text("2")
+    changed = json.loads(json.dumps(MARUSAN))
+    changed["recall"]["bot_name"] = "別の名前"
+    res = _snapshot(recall_sim, "check", {"clients": {"default": changed}}, extra_env={"DRY_RUN": "false"})
+    assert res.returncode == 1
+    assert "シークレット zoho-refresh-token の版: 1 → 2" in res.stdout
+    assert "クライアント設定の default が変わっています" in res.stdout
+    assert "DRY_RUN が変わっています" in res.stdout
