@@ -553,6 +553,12 @@ async function init() {
     showError(err && err.message ? err.message : "読み込めませんでした。ページを再読み込みしてください。");
     return;
   }
+  // ログインの Cookie は会社（クライアント）をまたいで1つ。URL の会社と違う会社のログインのまま使うと、
+  // 別の会社の CRM に商談記録を作ってしまうので、URL の会社でログインし直してもらう
+  if (state.me.client_id !== state.client) {
+    showLogin("other_client");
+    return;
+  }
   if (loginError) window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
   show("view-loading", false);
   setChrome(true);

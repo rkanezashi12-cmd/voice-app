@@ -2,14 +2,33 @@
 
 オンライン商談（Zoom / Teams / Google Meet）と対面商談の会話を文字起こしし、
 Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営業向け。
-将来は複数のクライアント企業に展開する前提で、設定はクライアント単位に分ける。
+複数のクライアント企業に展開する前提で、設定はクライアント単位に分ける（1つの Cloud Run に複数のクライアント）。
+
+## 0. クライアント一覧
+
+| クライアント ID | CRM（組織） | DC | 組織 ID | 状態 |
+|---|---|---|---|---|
+| `default` | 株式会社マルサン木型製作所（お客様の本番 CRM） | us | — | 稼働中。**設定・シークレット・動作を変えない** |
+| `monodemo` | ものづくりSFAデモ2（domain `monodemo2`。デモ用。ユーザー1名） | us | `6719392000000020005` | 2026-10-14 追加中（docs/monodemo.md） |
+
+- GCP（`voice-ai-510014` の Cloud Run `meeting-notes`）と Recall.ai（東京のアカウント）は全クライアントで共通
+- クライアントの設定は Cloud Run の `CLIENTS_CONFIG_JSON`（`app/clients.py`）。足すのは `scripts/setup_client.sh`
+- **シークレットの名前はクライアントごとに分ける。** `default` は今の名前（`zoho-client-id` など）のまま、ほかは
+  `<クライアント ID>-zoho-client-id` のように頭に付ける（`setup_zoho_connection.sh` / `setup_recall.sh` / `setup_app_login.sh` /
+  `rotate_api_key.sh` は `APP_CLIENT=<ID>` で切り替える）。あるクライアントの作業で、ほかのクライアントのシークレット・設定を変えない
+- Recall.ai のアカウントを共有するクライアントは、Webhook の送り先も署名用シークレットも共通。通知はボット・アップロードの
+  `metadata.client_id` で振り分ける（`app/routers/webhooks.py`。署名が合うクライアントに限る）。同じアカウントに送り先を足さない
+- `DRY_RUN`・`CRM_TEST_RECORDS` はサービス全体の設定で、クライアントごとに `dry_run`・`crm_test_records` で上書きできる
+  （`default` は上書きしない。ほかのクライアントは `scripts/client_mode.sh` で切り替える）
+- ほかのクライアントの作業では、前後で `scripts/marusan_snapshot.sh save` / `check` を実行し、`default` の設定・シークレットの版・
+  DRY_RUN が変わっていないことを確かめる（読み取りだけ）
 
 ---
 
 ## 1. 確定済みの構成（変更しない）
 
 - 画面・データの正は **Zoho CRM**。Zoho Creator は使わない。DC はクライアント設定で切り替える
-  （既定 US：`accounts.zoho.com` / `www.zohoapis.com`。デモ環境のお客様 CRM は US DC）
+  （既定 US：`accounts.zoho.com` / `www.zohoapis.com`。マルサン木型・ものづくりSFAデモ2 とも US DC）
   - スマホは Zoho CRM 公式アプリ、PC は CRM ウィジェット（商談記録の画面の「商談日報」。読むだけ。docs/widget.md）
 - オンライン会議は **Recall.ai 東京リージョン** `https://ap-northeast-1.recall.ai`。会議ボットは自作しない
   - **オンライン商談は CRM から呼ぶボット（Meeting Bot API、入口A）で行う**（2026-10-01 のユーザーの判断）
@@ -34,7 +53,10 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 4. **ログに文字起こし本文・要約・API キー・トークン・署名付き URL を出さない。**
    ID・件数・文字数・所要時間だけを出す（`tests/test_logging_redaction.py` で検査している）。
 5. **`DRY_RUN=true`（既定）では外部への書き込み（CRM の作成・更新、音声の削除）を行わずログだけ出す。**
-   開発・デモは**お客様（株式会社マルサン木型製作所）の本番 Zoho CRM** で行う。実書き込みはユーザーの指示があるときだけ。
+   クライアントの `dry_run` があればそちらが優先（`ClientServices.dry_run`）。実書き込みはユーザーの指示があるときだけ。
+   - `default`：**お客様（株式会社マルサン木型製作所）の本番 Zoho CRM**。開発・お客様向けのデモはここで行ってきた
+   - `monodemo`：デモ用の CRM（ものづくりSFAデモ2）。`dry_run=true` で始め、書き込みに切り替えるのはユーザーの指示があるときだけ
+     （`APP_CLIENT=monodemo bash scripts/client_mode.sh --write`）
 6. **CRM への書き込みはカスタムモジュール「商談記録」「用語辞書」だけ。** 取引先・連絡先・商談などの標準モジュールは
    読み取りのみ。`app/services/crm.py` のガードで、それ以外のモジュールへの書き込みはエラーにする。削除処理は作らない。
    **新しく作ったもの以外のデータ・設定は、書き換えも変更もしない**（ユーザーの指示）。標準モジュールや既存のカスタムモジュールの
@@ -42,8 +64,13 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
    モジュール・項目・関数・ワークフロー・変数だけ。既存のものに手を入れないと実現できないときは、作業を止めてユーザーに相談する。
    例外（2026-10-02 ユーザー了承）：商談記録の「先方担当者（連絡先）」（連絡先の複数選択ルックアップ）。Zoho が中間モジュールを作り、
    連絡先に逆向きの項目と関連リストを足す（連絡先のデータは書き換えない）。書き込むのは商談記録の作成だけ（docs/crm-setup.md の手順7）。
+   **このルールはどのクライアントの CRM にも同じに当てはめる。** `monodemo`（ものづくりSFAデモ2）も同じ範囲（2026-10-14 ユーザー確認）：
+   作るのは商談記録・用語辞書・関数・ワークフロー・変数・ウィジェットと上の例外だけで、既存のモジュール（Nippou・NippouLink・Inquiry・
+   Repair・TEST など）・項目・レイアウト・ワークフロー・データは変えない。デモ用のデータ（取引先など）も作らない。
+   新しいクライアントで書き込める範囲を広げるときは、そのクライアントごとにユーザーに確認してここに書く。
 7. **バックエンドが作るテスト用レコードは名前の先頭に【TEST】を付ける**（`CRM_TEST_RECORDS=true` が既定）。
    本番運用では `scripts/go_live.sh` で `false` にする（ユーザーが時期を決める。テストの記録は CRM の画面で消す。docs/go-live.md）。
+   `default` 以外のクライアントは、クライアントの `crm_test_records` で切り替える（`scripts/client_mode.sh --live` / `--test`。`go_live.sh` は効かない）。
 8. Zoho の接続先は `app/clients.py` の DC 設定（`"dc": "us" | "jp" | …`）だけで決める。URL を直書きしない。
 9. プロンプトは `prompts/` のファイルで管理し、コードに埋め込まない。モデル名は環境変数。
 10. 4xx はリトライしない。429 / 5xx / 通信エラーは指数バックオフで最大3回。
@@ -51,6 +78,10 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 
 12. **Zoho の API で実機で確かめた新しい挙動は、スキル `zoho-crm-build` に追記する。** 正本は
     `rkanezashi12-cmd/zoho-agri-demo` の `.claude/skills/zoho-crm-build/SKILL.md`（更新手順はその冒頭）。
+13. **Zoho に関わる作業（CRM の API・Deluge・ウィジェット・Self Client・OAuth・ワークフローなど）の前には、必ずスキル
+    `zoho-crm-build` と `zoho-deluge` を読む。** `zoho-crm-build` がスキル一覧に無いときは、リポジトリ
+    `rkanezashi12-cmd/zoho-agri-demo` を読み取り用に追加（add_repo）して `.claude/skills/zoho-crm-build/SKILL.md` を読む。
+    スキルに載っていない挙動を実機で確かめたら、ルール12のとおりスキルに追記する。
 
 ### OAuth スコープ（Zoho。発行後は追加できない）
 
@@ -79,7 +110,7 @@ ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ, ZohoCRM.org.READ
 | C デスクトップ | アプリ → `POST /api/desktop/upload-token` | Recall.ai（話者名つき） | Recall の録音削除 |
 | D モバイル SDK | 未提供。`app/pipeline/sources.py` にソースを1つ足す | — | — |
 
-Webhook（`POST /webhooks/recall`）は署名検証 → Cloud Tasks に積んで即 200。
+Webhook（`POST /webhooks/recall`）は署名検証 → `metadata.client_id` でクライアントを決める → Cloud Tasks に積んで即 200。
 共通処理は `POST /internal/process`（Cloud Tasks から OIDC 認証で呼ぶ）。
 
 共通処理：補正（用語辞書を注入。対面録音は文字起こしの時点で辞書を使うので既定で省く）→ 要約・構造化（JSON スキーマ固定）→
@@ -90,7 +121,7 @@ CRM を1回で更新（要約・構造化項目・全文・状態）→ 音声�
 ```
 app/main.py            FastAPI アプリ
 app/config.py          環境変数（pydantic-settings）
-app/clients.py         クライアント（テナント）単位の設定と秘密情報の解決
+app/clients.py         クライアント（テナント）単位の設定と秘密情報の解決（dry_run・crm_test_records の上書きも）
 app/field_map.py       CRM の API 名・選択肢の値（実物に合わせてここだけ直す）
 app/routers/           bots / desktop / recordings / webhooks / internal / app_auth・app_api（録音アプリ）
 app/services/          zoho_auth / crm / recall / gemini / tasks / storage / audio / zoho_login / geocoding

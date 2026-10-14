@@ -91,8 +91,9 @@ class StorageService:
             count += 1
         return count
 
-    async def delete_prefix(self, prefix: str) -> int:
-        if self.dry_run:
+    async def delete_prefix(self, prefix: str, *, dry_run: bool | None = None) -> int:
+        """prefix の下を消す。dry_run を渡せば（クライアントごとの設定）それに従い、無ければサービス全体の設定。"""
+        if self.dry_run if dry_run is None else dry_run:
             log_event(logger, "dry_run.skip", operation="gcs.delete_prefix", prefix=prefix)
             return 0
         count = await asyncio.to_thread(self._delete_prefix, prefix)

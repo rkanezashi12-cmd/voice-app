@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 録音アプリ（/app/）のログイン（Zoho アカウント）と、GPS の候補（Google Geocoding API）をつなぐ（Cloud Shell で実行する想定）。
 #
-#   cd ~/voice-app && git pull && bash scripts/setup_app_login.sh
+#   cd ~/voice-app && git pull && bash scripts/setup_app_login.sh                      # マルサン木型（default）
+#   cd ~/voice-app && git pull && APP_CLIENT=monodemo bash scripts/setup_app_login.sh  # 2つ目以降のクライアント
 #
 # 行うこと（何度実行しても壊れない。CRM には書き込まない。DRY_RUN は変えない）:
 #   1. Zoho の API コンソールに「Server-based Applications」のクライアントを作ってもらい、Client ID と Client Secret を聞く
@@ -11,6 +12,9 @@
 #   4. Secret Manager に保存し、Cloud Run のクライアント設定に app を足す（zoho・recall などほかの設定は変えない）
 #   5. 録音アプリの URL を表示する
 # 2回目からは、保存済みの値をそのまま Enter で使える。手順は docs/visit-app.md。
+# シークレットと地図の API キーはクライアントごとに分ける（default は app-login-client-id などの今の名前、
+# ほかのクライアントは <APP_CLIENT>-app-login-client-id など。地図のキーの ID は <APP_CLIENT>-app-geocoding-…）。
+# 地図のキーを作り直すときに消すのは、そのクライアントのキーだけ。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Ctrl+Z（一時停止）を効かなくする。「元に戻す」のつもりで押すと、スクリプトが止まったままになって分かりにくいため
@@ -21,7 +25,18 @@ REGION="asia-northeast1"
 SERVICE="meeting-notes"
 RUN_SA="meeting-notes-run@${PROJECT}.iam.gserviceaccount.com"
 APP_CLIENT="${APP_CLIENT:-default}" # クライアント設定のキー
-MAPS_KEY_ID="app-geocoding"         # Google の API キーの ID の頭（作るたびに日時を付ける。英小文字・数字・ハイフン）
+[[ "$APP_CLIENT" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || {
+  echo "エラー: APP_CLIENT は英小文字・数字・ハイフン（32文字まで）にしてください" >&2
+  exit 1
+}
+# シークレットの名前。default（マルサン木型）は今までの名前のまま、ほかのクライアントは名前を頭に付けて分ける
+secret_name() { if [ "$APP_CLIENT" = default ]; then echo "$1"; else echo "${APP_CLIENT}-$1"; fi; }
+SECRET_LOGIN_ID="$(secret_name app-login-client-id)"
+SECRET_LOGIN_SECRET="$(secret_name app-login-client-secret)"
+SECRET_SESSION="$(secret_name app-session-secret)"
+SECRET_MAPS="$(secret_name app-maps-api-key)"
+# Google の API キーの ID の頭（作るたびに日時を付ける。英小文字・数字・ハイフン）。クライアントごとに分ける
+MAPS_KEY_ID="$(secret_name app-geocoding)"
 declare -A REUSED=()                # 保存済みの値をそのまま使ったシークレット名（保存し直さない）
 SAVING=""                           # 手順4（保存）に入ったら 1
 PASTE_START=$'\e[200~'              # 貼り付けの目印（ブラケットペースト）。値に混ざったら外す
@@ -120,13 +135,13 @@ save_maps_key() {
   local value stored=""
   value="$(gcloud services api-keys get-key-string "$1" --project="$PROJECT" --format='value(keyString)')"
   [ -n "$value" ] || fail "API キー $1 の値を読めませんでした"
-  if secret_exists app-maps-api-key; then
-    stored="$(gcloud secrets versions access latest --secret=app-maps-api-key "${LOC_FLAG[@]}" 2>/dev/null)" || stored=""
+  if secret_exists "$SECRET_MAPS"; then
+    stored="$(gcloud secrets versions access latest --secret="$SECRET_MAPS" "${LOC_FLAG[@]}" 2>/dev/null)" || stored=""
   fi
   if [ "$value" = "$stored" ]; then
     echo "保存済みの地図のキー（${1}）をそのまま使います。"
   else
-    save_secret app-maps-api-key "$value"
+    save_secret "$SECRET_MAPS" "$value"
   fi
 }
 
@@ -168,7 +183,7 @@ esac
 echo "プロジェクト: ${PROJECT} / サービス: ${SERVICE_URL} / Zoho の DC: ${ZOHO_DC}"
 
 step "1. Zoho の API コンソールにログイン用のクライアントを作る"
-if secret_exists app-login-client-id && secret_exists app-login-client-secret; then
+if secret_exists "$SECRET_LOGIN_ID" && secret_exists "$SECRET_LOGIN_SECRET"; then
   echo "保存済みのクライアントがあります。作り直していなければ、2つともそのまま Enter で使います。"
 else
   echo "${CONSOLE} を開き、「ADD CLIENT」→「Server-based Applications」で、次のとおり作ってください:"
@@ -182,8 +197,8 @@ echo "Zoho の画面で Client ID をコピー → ここに貼る → Client Se
 echo "この画面（Cloud Shell）では Ctrl+C を押さないでください（コピーではなく中止になります）。"
 STORED_ID=""
 STORED_SECRET=""
-secret_exists app-login-client-id && STORED_ID=app-login-client-id
-secret_exists app-login-client-secret && STORED_SECRET=app-login-client-secret
+secret_exists "$SECRET_LOGIN_ID" && STORED_ID="$SECRET_LOGIN_ID"
+secret_exists "$SECRET_LOGIN_SECRET" && STORED_SECRET="$SECRET_LOGIN_SECRET"
 for _ in 1 2 3; do
   ask_secret LOGIN_CLIENT_ID "Client ID（表示されません）: " "$STORED_ID"
   [[ "$LOGIN_CLIENT_ID" == 1000.* ]] && break
@@ -212,7 +227,7 @@ done
 [ -n "$LOGIN_CLIENT_SECRET" ] || fail "Client Secret を確かめられませんでした。何も保存していません"
 
 step "2. ログインの Cookie の署名鍵"
-if secret_exists app-session-secret; then
+if secret_exists "$SECRET_SESSION"; then
   echo "保存済みの鍵をそのまま使います（作り直すとログイン中の人は全員ログアウトになります）。"
   SESSION_SECRET=""
 else
@@ -252,9 +267,9 @@ step "4. Secret Manager に保存して、Cloud Run の設定に app を足す�
 yes_no "保存して設定を更新するなら yes、やめるなら no: " ||
   fail "中止しました。何も保存していません（API キーも作っていません）。"
 SAVING=1
-reused app-login-client-id || save_secret app-login-client-id "$LOGIN_CLIENT_ID"
-reused app-login-client-secret || save_secret app-login-client-secret "$LOGIN_CLIENT_SECRET"
-[ -z "$SESSION_SECRET" ] || save_secret app-session-secret "$SESSION_SECRET"
+reused "$SECRET_LOGIN_ID" || save_secret "$SECRET_LOGIN_ID" "$LOGIN_CLIENT_ID"
+reused "$SECRET_LOGIN_SECRET" || save_secret "$SECRET_LOGIN_SECRET" "$LOGIN_CLIENT_SECRET"
+[ -z "$SESSION_SECRET" ] || save_secret "$SECRET_SESSION" "$SESSION_SECRET"
 unset LOGIN_CLIENT_ID LOGIN_CLIENT_SECRET SESSION_SECRET
 if [ "$MAPS_ACTION" = create ]; then
   KEY_ID="${MAPS_KEY_ID}-$(date -u +%Y%m%d%H%M%S)"
@@ -268,13 +283,14 @@ elif [ "$MAPS_ACTION" = keep ]; then
   save_maps_key "${MAPS_KEYS[0]}"
 fi
 USE_MAPS=""
-secret_exists app-maps-api-key && USE_MAPS=1
-CONFIG_OUT="$(SVC_JSON="$SVC_JSON" USE_MAPS="$USE_MAPS" python3 - "$APP_CLIENT" "$REF_PREFIX" <<'PY'
+secret_exists "$SECRET_MAPS" && USE_MAPS=1
+CONFIG_OUT="$(SVC_JSON="$SVC_JSON" USE_MAPS="$USE_MAPS" python3 - "$APP_CLIENT" "$REF_PREFIX" \
+  "$SECRET_LOGIN_ID" "$SECRET_LOGIN_SECRET" "$SECRET_SESSION" "$SECRET_MAPS" <<'PY'
 import json
 import os
 import sys
 
-app_client, prefix = sys.argv[1:3]
+app_client, prefix, login_id, login_secret, session, maps = sys.argv[1:7]
 svc = json.loads(os.environ["SVC_JSON"])
 env = {e.get("name"): e.get("value") for e in svc["spec"]["template"]["spec"]["containers"][0].get("env", [])}
 clients = json.loads(env.get("CLIENTS_CONFIG_JSON") or "{}")
@@ -282,13 +298,13 @@ client = clients.setdefault("clients", {}).setdefault(app_client, {})
 app = client.get("app") or {}
 app.update(
     {
-        "login_client_id": f"sm:{prefix}/app-login-client-id/versions/latest",
-        "login_client_secret": f"sm:{prefix}/app-login-client-secret/versions/latest",
-        "session_secret": f"sm:{prefix}/app-session-secret/versions/latest",
+        "login_client_id": f"sm:{prefix}/{login_id}/versions/latest",
+        "login_client_secret": f"sm:{prefix}/{login_secret}/versions/latest",
+        "session_secret": f"sm:{prefix}/{session}/versions/latest",
     }
 )
 if os.environ.get("USE_MAPS"):
-    app["maps_api_key"] = f"sm:{prefix}/app-maps-api-key/versions/latest"
+    app["maps_api_key"] = f"sm:{prefix}/{maps}/versions/latest"
 client["app"] = app
 # 1行目は環境変数に渡す形（ASCII だけ）、2行目は画面に出す形
 print(json.dumps(clients, separators=(",", ":")))

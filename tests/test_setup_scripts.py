@@ -37,7 +37,15 @@ def test_setup_recall_adds_recall_config_that_the_app_accepts() -> None:
     del current["clients"]["default"]["recall"]
     code = _embedded_python("setup_recall.sh", 'CONFIG_OUT="$(')
     result = subprocess.run(  # noqa: S603 リポジトリ内のスクリプトの一部を実行する
-        [sys.executable, "-c", code, "default", "projects/p/secrets", "https://ap-northeast-1.recall.ai"],
+        [
+            sys.executable,
+            "-c",
+            code,
+            "default",
+            "sm:projects/p/secrets/recall-api-key/versions/latest",
+            "sm:projects/p/secrets/recall-webhook-secret/versions/latest",
+            "https://ap-northeast-1.recall.ai",
+        ],
         env={**os.environ, "SVC_JSON": _service(current), "BOT_NAME": "議事録 ボット（録音中）"},
         capture_output=True,
         text=True,
@@ -72,8 +80,12 @@ case "$1 $2" in
   "secrets versions")
     if [ "$3" = access ]; then
       for a in "$@"; do case "$a" in --secret=*) cat "$SIM/store/${a#--secret=}" ;; esac; done
+    elif [ "$3" = list ]; then
+      # 版の番号は、保存した回数（$SIM/store/.ver-<名前>）。無ければ 1
+      echo "projects/p/secrets/$4/versions/$(cat "$SIM/store/.ver-$4" 2>/dev/null || echo 1)"
     else
       cat > "$SIM/store/$4"
+      echo $(( $(cat "$SIM/store/.ver-$4" 2>/dev/null || echo 1) + 1 )) > "$SIM/store/.ver-$4"
     fi ;;
   "secrets create") cat > "$SIM/store/$3" ;;
   "run services") [ "$3" != describe ] || cat "$SIM/service.json" ;;
@@ -107,10 +119,20 @@ case "$1 $2" in
 esac
 """
 
-# recall_check.py check-key だけ偽物にする（キーが good で始まれば使える）。ほかの python3 は本物を使う
+# recall_check.py check-key と crm_setup.py（Zoho への問い合わせ）だけ偽物にする。ほかの python3 は本物を使う
+# check-key はキーが good で始まれば使える。crm_setup.py の組織は FAKE_ORG_ID（無ければ 111）
 FAKE_PYTHON = """#!/usr/bin/env bash
 if [ "${1:-}" = scripts/recall_check.py ] && [ "${2:-}" = check-key ]; then
   [[ "$RECALL_API_KEY" == good* ]]
+  exit
+fi
+if [ "${1:-}" = scripts/crm_setup.py ]; then
+  case "${2:-}" in
+    exchange-code) echo "export ZOHO_REFRESH_TOKEN='1000.refresh-$3'" ;;
+    show-org) printf 'company_name: Demo\\ndomain_name: demo\\nid: %%s\\ntype: production\\n' "${FAKE_ORG_ID:-111}" ;;
+    show-fields) echo "MeetingRecords.Status: picklist" ;;
+    check-access) echo "OK" ;;
+  esac
   exit
 fi
 exec "%s" "$@"
@@ -164,11 +186,13 @@ def _run_script(
     *,
     extra_env: dict[str, str] | None = None,
     args: tuple[str, ...] = (),
+    proc_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
+    """extra_env は偽の Cloud Run の環境変数、proc_env はスクリプトに渡す環境変数（APP_CLIENT など）。"""
     return subprocess.run(  # noqa: S603 リポジトリ内のスクリプトを偽の gcloud で実行する
         ["bash", str(ROOT / "scripts" / script), *args],  # noqa: S607
         input="".join(f"{a}\n" for a in answers),
-        env=_prepare(sim, clients, extra_env),
+        env={**_prepare(sim, clients, extra_env), **(proc_env or {})},
         capture_output=True,
         text=True,
         timeout=60,
@@ -286,7 +310,17 @@ def test_setup_app_login_adds_app_config_that_the_app_accepts() -> None:
     current = json.loads((ROOT / "config" / "clients.example.json").read_text(encoding="utf-8"))
     code = _embedded_python("setup_app_login.sh", 'CONFIG_OUT="$(')
     result = subprocess.run(  # noqa: S603 リポジトリ内のスクリプトの一部を実行する
-        [sys.executable, "-c", code, "default", "projects/p/secrets"],
+        [
+            sys.executable,
+            "-c",
+            code,
+            "default",
+            "projects/p/secrets",
+            "app-login-client-id",
+            "app-login-client-secret",
+            "app-session-secret",
+            "app-maps-api-key",
+        ],
         env={**os.environ, "SVC_JSON": _service(current), "USE_MAPS": "1"},
         capture_output=True,
         text=True,
@@ -579,3 +613,296 @@ def test_artifact_cleanup_keep_count_can_be_changed(
     res = _run_script(recall_sim, "setup_artifact_cleanup.sh", ["yes"], LIVE_CLIENTS)
     assert res.returncode == 1
     assert "KEEP_VERSIONS" in res.stderr
+
+
+# ---- 2つ目のクライアント（monodemo）：default（マルサン木型）のシークレット・設定を変えないこと ----
+
+MARUSAN = {
+    "api_key": "sm:projects/p/secrets/backend-api-key/versions/latest",
+    "zoho": {
+        "dc": "us",
+        "client_id": "sm:projects/p/secrets/zoho-client-id/versions/latest",
+        "client_secret": "sm:projects/p/secrets/zoho-client-secret/versions/latest",
+        "refresh_token": "sm:projects/p/secrets/zoho-refresh-token/versions/latest",
+    },
+    "recall": {
+        "api_key": "sm:projects/p/secrets/recall-api-key/versions/latest",
+        "webhook_secret": "sm:projects/p/secrets/recall-webhook-secret/versions/latest",
+        "bot_name": "議事録ボット（録音中）",
+    },
+    "app": {
+        "login_client_id": "sm:projects/p/secrets/app-login-client-id/versions/latest",
+        "login_client_secret": "sm:projects/p/secrets/app-login-client-secret/versions/latest",
+        "session_secret": "sm:projects/p/secrets/app-session-secret/versions/latest",
+        "maps_api_key": "sm:projects/p/secrets/app-maps-api-key/versions/latest",
+    },
+}
+MONODEMO = {"api_key": "sm:projects/p/secrets/monodemo-backend-api-key/versions/latest", "dry_run": True}
+MONO_ENV = {"APP_CLIENT": "monodemo"}
+
+
+def _two_clients(**monodemo: object) -> dict:
+    return {"clients": {"default": json.loads(json.dumps(MARUSAN)), "monodemo": {**MONODEMO, **monodemo}}}
+
+
+def _assert_marusan_untouched(sim: Path) -> dict:
+    deployed = _deployed_config(sim)
+    assert deployed["clients"]["default"] == MARUSAN, "default（マルサン木型）の設定は変えない"
+    assert not [n for n in _saved(sim) if not n.startswith("monodemo-")], (
+        "default のシークレットは保存し直さない"
+    )
+    ClientRegistry.from_dict(deployed)  # アプリが読める形のまま
+    return deployed["clients"]["monodemo"]
+
+
+def test_setup_client_adds_new_client_in_dry_run(recall_sim: Path) -> None:
+    clients = {"clients": {"default": json.loads(json.dumps(MARUSAN))}}
+    env = {**MONO_ENV, "DISPLAY_NAME": "ものづくりSFAデモ2"}
+    res = _run_script(recall_sim, "setup_client.sh", ["yes"], clients, proc_env=env)
+    assert res.returncode == 0, res.stderr
+    assert _saved(recall_sim) == ["monodemo-backend-api-key"]
+    assert len((recall_sim / "store" / "monodemo-backend-api-key").read_text()) == 64
+    mono = _assert_marusan_untouched(recall_sim)
+    assert mono == {
+        "api_key": "sm:projects/voice-ai-510014/secrets/monodemo-backend-api-key/versions/latest",
+        "timezone": "Asia/Tokyo",
+        "display_name": "ものづくりSFAデモ2",
+        "dry_run": True,
+        "crm_test_records": True,
+    }
+    assert (recall_sim / "store" / "monodemo-backend-api-key").read_text() not in res.stdout, (
+        "キーは画面に出さない"
+    )
+
+
+def test_setup_client_rerun_keeps_key_and_mode(recall_sim: Path) -> None:
+    (recall_sim / "store" / "monodemo-backend-api-key").write_text("k" * 64)
+    clients = _two_clients(dry_run=False, crm_test_records=True)
+    res = _run_script(recall_sim, "setup_client.sh", ["yes"], clients, proc_env=MONO_ENV)
+    assert res.returncode == 0, res.stderr
+    assert _saved(recall_sim) == [], "作り済みの API キーは作り直さない"
+    assert _assert_marusan_untouched(recall_sim)["dry_run"] is False, (
+        "作り済みのクライアントの DRY_RUN は変えない"
+    )
+
+
+@pytest.mark.parametrize("app_client", ["", "default", "Bad_Name"])
+def test_setup_client_refuses_default_and_bad_names(recall_sim: Path, app_client: str) -> None:
+    res = _run_script(
+        recall_sim, "setup_client.sh", ["yes"], _two_clients(), proc_env={"APP_CLIENT": app_client}
+    )
+    assert res.returncode == 1
+    assert _gcloud_calls(recall_sim) == []
+
+
+@pytest.mark.parametrize(
+    ("arg", "key", "value"), [("--write", "dry_run", False), ("--live", "crm_test_records", False)]
+)
+def test_client_mode_changes_only_that_client(recall_sim: Path, arg: str, key: str, value: bool) -> None:
+    res = _run_script(recall_sim, "client_mode.sh", ["yes"], _two_clients(), proc_env=MONO_ENV, args=(arg,))
+    assert res.returncode == 0, res.stderr
+    mono = _assert_marusan_untouched(recall_sim)
+    assert mono[key] is value
+
+
+def test_client_mode_shows_state_and_refuses_default(recall_sim: Path) -> None:
+    res = _run_script(recall_sim, "client_mode.sh", [], _two_clients(), proc_env=MONO_ENV)
+    assert res.returncode == 0, res.stderr
+    assert "CRM に書き込まない（dry_run）・【TEST】を付ける" in res.stdout
+    assert _env_updates(recall_sim) == []
+    res = _run_script(
+        recall_sim,
+        "client_mode.sh",
+        [],
+        _two_clients(),
+        proc_env={"APP_CLIENT": "default"},
+        args=("--write",),
+    )
+    assert res.returncode == 1
+    assert _env_updates(recall_sim) == []
+
+
+def test_client_mode_cancel_changes_nothing(recall_sim: Path) -> None:
+    res = _run_script(
+        recall_sim, "client_mode.sh", ["no"], _two_clients(), proc_env=MONO_ENV, args=("--write",)
+    )
+    assert res.returncode == 1
+    assert _env_updates(recall_sim) == []
+
+
+def test_setup_zoho_connection_for_second_client_uses_its_own_secrets(recall_sim: Path) -> None:
+    env = {**MONO_ENV, "ORG_ID": "6719392000000020005", "FAKE_ORG_ID": "6719392000000020005"}
+    answers = ["1000.MONOID", "mono-secret", "code-1", "yes", "yes"]
+    res = _run_script(recall_sim, "setup_zoho_connection.sh", answers, _two_clients(), proc_env=env)
+    assert res.returncode == 0, res.stderr
+    assert sorted(_saved(recall_sim)) == [
+        "monodemo-zoho-client-id",
+        "monodemo-zoho-client-secret",
+        "monodemo-zoho-refresh-token",
+    ]
+    mono = _assert_marusan_untouched(recall_sim)
+    assert mono["zoho"]["refresh_token"].endswith("/monodemo-zoho-refresh-token/versions/latest")
+    assert mono["dry_run"] is True, "DRY_RUN は変えない"
+
+
+def test_setup_zoho_connection_stops_on_wrong_org(recall_sim: Path) -> None:
+    # マルサン木型の組織で認可コードを発行してしまったとき
+    env = {**MONO_ENV, "ORG_ID": "6719392000000020005", "FAKE_ORG_ID": "999"}
+    res = _run_script(
+        recall_sim,
+        "setup_zoho_connection.sh",
+        ["1000.X", "s", "code", "yes", "yes"],
+        _two_clients(),
+        proc_env=env,
+    )
+    assert res.returncode == 1
+    assert "ORG_ID" in res.stderr
+    assert _saved(recall_sim) == []
+    assert _env_updates(recall_sim) == []
+
+
+@pytest.mark.parametrize("env", [{"APP_CLIENT": "monodemo"}, {"APP_CLIENT": "newclient", "ORG_ID": "123456"}])
+def test_setup_zoho_connection_needs_org_id_and_client(recall_sim: Path, env: dict) -> None:
+    res = _run_script(recall_sim, "setup_zoho_connection.sh", ["1000.X"], _two_clients(), proc_env=env)
+    assert res.returncode == 1
+    assert _saved(recall_sim) == []
+
+
+def test_setup_zoho_connection_default_keeps_old_secret_names() -> None:
+    code = _embedded_python("setup_zoho_connection.sh", 'CONFIG_OUT="$(')
+    result = subprocess.run(  # noqa: S603 リポジトリ内のスクリプトの一部を実行する
+        [
+            sys.executable,
+            "-c",
+            code,
+            "default",
+            "us",
+            "projects/p/secrets",
+            "zoho-client-id",
+            "zoho-client-secret",
+            "zoho-refresh-token",
+        ],
+        env={**os.environ, "CURRENT_JSON": _service(_two_clients())},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    env_value = result.stdout.splitlines()[0]
+    assert env_value.isascii()
+    assert json.loads(env_value)["clients"]["default"] == MARUSAN
+
+
+def test_setup_recall_second_client_shares_default_account(recall_sim: Path) -> None:
+    res = _run_script(
+        recall_sim,
+        "setup_recall.sh",
+        ["yes", "デモ 議事録（録音中）", "yes"],
+        _two_clients(),
+        proc_env=MONO_ENV,
+    )
+    assert res.returncode == 0, res.stderr
+    assert _saved(recall_sim) == [], "同じアカウントなら保存し直さない"
+    mono = _assert_marusan_untouched(recall_sim)
+    assert mono["recall"]["api_key"] == MARUSAN["recall"]["api_key"]
+    assert mono["recall"]["webhook_secret"] == MARUSAN["recall"]["webhook_secret"]
+    assert mono["recall"]["bot_name"] == "デモ 議事録（録音中）"
+    assert "送り先を足さないで" in res.stdout
+
+
+def test_setup_recall_second_client_with_own_account(recall_sim: Path) -> None:
+    answers = ["no", "goodmono", WEBHOOK_SECRET, "", "yes", ""]
+    res = _run_script(recall_sim, "setup_recall.sh", answers, _two_clients(), proc_env=MONO_ENV)
+    assert res.returncode == 0, res.stderr
+    assert sorted(_saved(recall_sim)) == ["monodemo-recall-api-key", "monodemo-recall-webhook-secret"]
+    mono = _assert_marusan_untouched(recall_sim)
+    assert mono["recall"]["api_key"].endswith("/monodemo-recall-api-key/versions/latest")
+
+
+def test_setup_recall_needs_the_client(recall_sim: Path) -> None:
+    clients = {"clients": {"default": json.loads(json.dumps(MARUSAN))}}
+    res = _run_script(recall_sim, "setup_recall.sh", ["yes"], clients, proc_env=MONO_ENV)
+    assert res.returncode == 1
+    assert "setup_client.sh" in res.stderr
+
+
+def test_setup_app_login_second_client_keeps_default_keys(recall_sim: Path) -> None:
+    store = recall_sim / "store"
+    # default の地図のキーと保存済みの値（2つ目のクライアントで作り直しても消さないこと）
+    (store / "apikey-app-geocoding-20260101000000").write_text(OLD_KEY_CREATED)
+    (store / "app-maps-api-key").write_text(fake_maps_key("app-geocoding-20260101000000"))
+    (store / "monodemo-app-session-secret").write_text("s" * 64)
+    (store / "apikey-monodemo-app-geocoding-20260102000000").write_text("2026-01-02T00:00:00.000000Z")
+    clients = _two_clients(
+        zoho={**MARUSAN["zoho"], "client_id": "sm:projects/p/secrets/monodemo-zoho-client-id/versions/latest"}
+    )
+    answers = ["1000.MONOLOGIN", "mono-login-secret", "yes", "yes", "yes"]
+    res = _run_script(recall_sim, "setup_app_login.sh", answers, clients, proc_env=MONO_ENV)
+    assert res.returncode == 0, res.stderr
+    assert sorted(_saved(recall_sim)) == [
+        "monodemo-app-login-client-id",
+        "monodemo-app-login-client-secret",
+        "monodemo-app-maps-api-key",
+    ]
+    keys = _maps_keys(recall_sim)
+    assert "app-geocoding-20260101000000" in keys, "default の地図のキーは消さない"
+    assert "monodemo-app-geocoding-20260102000000" not in keys, (
+        "作り直したら、そのクライアントの古いキーだけ消す"
+    )
+    assert any(re.fullmatch(r"monodemo-app-geocoding-\d{14}", k) for k in keys)
+    assert (store / "app-maps-api-key").read_text() == fake_maps_key("app-geocoding-20260101000000")
+    mono = _assert_marusan_untouched(recall_sim)
+    assert mono["app"]["session_secret"].endswith("/monodemo-app-session-secret/versions/latest")
+    assert "https://svc.example.run.app/app/?c=monodemo" in res.stdout
+
+
+def test_setup_recorder_test_refuses_to_run_again(recall_sim: Path) -> None:
+    """初回専用：サービスが既にあれば、クライアント設定を初期値に戻すデプロイをせずに止まる。"""
+    res = _run_script(recall_sim, "setup_recorder_test.sh", [], _two_clients())
+    assert res.returncode == 1
+    assert "初回専用" in res.stderr
+    assert not any(c[:2] == ["run", "deploy"] for c in _gcloud_calls(recall_sim))
+    assert _env_updates(recall_sim) == []
+
+
+# ---- marusan_snapshot.sh：マルサン木型（default）の設定が変わっていないかを確かめる ----
+
+
+def _snapshot(
+    sim: Path, mode: str, clients: dict, extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
+    env = {"SNAPSHOT": str(sim / "snapshot.json")}
+    return _run_script(
+        sim, "marusan_snapshot.sh", [], clients, extra_env=extra_env, args=(mode,), proc_env=env
+    )
+
+
+def test_marusan_snapshot_passes_when_only_monodemo_changes(recall_sim: Path) -> None:
+    for name in ("zoho-client-id", "recall-api-key"):
+        (recall_sim / "store" / name).write_text("x")
+    (recall_sim / "store" / "apikey-app-geocoding-20260101000000").write_text(OLD_KEY_CREATED)
+    assert _snapshot(recall_sim, "save", {"clients": {"default": MARUSAN}}).returncode == 0
+    saved = (recall_sim / "snapshot.json").read_text()
+    assert "x" not in json.loads(saved)["secret_versions"].values(), "シークレットの値は控えない"
+    # monodemo を足し、monodemo のシークレットと地図のキーを作っても OK
+    (recall_sim / "store" / "monodemo-zoho-client-id").write_text("y")
+    (recall_sim / "store" / "apikey-monodemo-app-geocoding-20261014000000").write_text(OLD_KEY_CREATED)
+    res = _snapshot(recall_sim, "check", _two_clients())
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "OK" in res.stdout
+    assert not [c for c in _gcloud_calls(recall_sim) if c[:3] == ["run", "services", "update"]], (
+        "読み取りだけ"
+    )
+
+
+def test_marusan_snapshot_detects_changes(recall_sim: Path) -> None:
+    (recall_sim / "store" / "zoho-refresh-token").write_text("x")
+    assert _snapshot(recall_sim, "save", {"clients": {"default": MARUSAN}}).returncode == 0
+    # default のシークレットに新しい版が足された・設定が変わった・DRY_RUN が変わった
+    (recall_sim / "store" / ".ver-zoho-refresh-token").write_text("2")
+    changed = json.loads(json.dumps(MARUSAN))
+    changed["recall"]["bot_name"] = "別の名前"
+    res = _snapshot(recall_sim, "check", {"clients": {"default": changed}}, extra_env={"DRY_RUN": "false"})
+    assert res.returncode == 1
+    assert "シークレット zoho-refresh-token の版: 1 → 2" in res.stdout
+    assert "クライアント設定の default が変わっています" in res.stdout
+    assert "DRY_RUN が変わっています" in res.stdout

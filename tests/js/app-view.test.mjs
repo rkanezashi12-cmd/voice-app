@@ -29,6 +29,7 @@ test("ログインの失敗の理由（知らない種類は一般的な文）",
   assert.match(loginErrorText("not_crm_user"), /この CRM のユーザーではありません/);
   assert.match(loginErrorText("expired"), /時間が過ぎました/);
   assert.match(loginErrorText("no_api_access"), /API の利用/);
+  assert.match(loginErrorText("other_client"), /別の会社の CRM/);
   assert.equal(loginErrorText("unknown"), loginErrorText("failed"));
   assert.equal(loginErrorText(null), "");
 });

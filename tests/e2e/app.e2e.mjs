@@ -243,6 +243,14 @@ await run("ログインしていないときはログイン画面（失敗の理
   server.loggedIn = true;
 });
 
+await run("URL の会社と違う会社のログインのままなら、ログインし直してもらう", async (page) => {
+  await page.goto(`${server.origin}/app/?c=monodemo`);
+  await page.locator("#view-login").waitFor();
+  assert.equal(await page.locator("#btn-login").getAttribute("href"), "/auth/login?c=monodemo");
+  assert.match(await page.locator("#login-error").textContent(), /別の会社の CRM にログインしています/);
+  assert.equal(await page.locator("#tab-input").isVisible(), false, "入力画面は出さない");
+});
+
 await run("GPS の候補 → 担当者を複数選択・追加 → 録音画面へ引き継ぐ", async (page) => {
   await page.goto(`${server.origin}/app/`);
   await page.locator("#tab-input").waitFor();

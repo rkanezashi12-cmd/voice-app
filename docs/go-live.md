@@ -1,5 +1,8 @@
 # 本番運用に切り替える（商談記録の名前の【TEST】を外す）
 
+> `go_live.sh` が変えるのはサービス全体の `CRM_TEST_RECORDS`（マルサン木型）。2つ目以降のクライアントは
+> `APP_CLIENT=<クライアント ID> bash scripts/client_mode.sh --live` で、そのクライアントだけを切り替える（[monodemo.md](monodemo.md)）。
+
 テスト中は、バックエンドが作る商談記録（録音アプリで作る記録・デスクトップ方式の記録）の名前の先頭に【TEST】が付く
 （`CRM_TEST_RECORDS=true`）。本番運用では付けないようにし、テストで作った記録を CRM の画面で消す。
 CRM の画面で作る商談記録（録音用URL・ボット）の名前は、もともと変えない（入れたとおり）。

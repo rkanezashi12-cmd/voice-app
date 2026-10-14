@@ -1,5 +1,8 @@
 # バックエンドの Zoho CRM 接続
 
+> 2つ目以降のクライアント（ものづくりSFAデモ2 など）は [monodemo.md](monodemo.md) の手順で、`APP_CLIENT=<クライアント ID>` を付けて行う。
+> シークレットはクライアントごとに別の名前になり、マルサン木型（`default`）の設定は変わらない。
+
 バックエンド（Cloud Run）がお客様の Zoho CRM を読み書きするための接続を作る。
 先に CRM の「商談記録」「用語辞書」を作っておく（[crm-setup.md](crm-setup.md)）。
 

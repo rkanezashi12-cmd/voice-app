@@ -4,7 +4,7 @@
 #   git clone -b claude/meeting-transcription-app-setup-nkaz1m https://github.com/rkanezashi12-cmd/voice-app.git
 #   cd voice-app && bash scripts/setup_recorder_test.sh
 #
-# 行うこと（何度実行しても壊れない）:
+# 初回専用（サービスが既にあれば何も変えずに止まる。2回目以降のデプロイは scripts/deploy.sh）。行うこと:
 #   1. Cloud Build API の有効化（gcloud run deploy --source に必要）
 #   2. 録音の一時保存バケット（1日で自動削除）
 #   3. 実行用サービスアカウントと権限（バケット・署名・シークレットの読み取り）
@@ -36,6 +36,16 @@ else
   exit 1
 fi
 echo "シークレットの参照先: ${REF_PREFIX}"
+
+# 初回専用。手順4のデプロイは環境変数を丸ごと置き換える（クライアント設定・DRY_RUN などが初期値に戻る）ので、
+# サービスが既にあるときは何も変えずに止まる
+if gcloud run services describe "$SERVICE" --region="$REGION" --format='value(status.url)' >/dev/null 2>&1; then
+  echo "Cloud Run のサービス ${SERVICE} は既にあります。このスクリプトは初回専用なので、何も変えずに止めます" >&2
+  echo "（もう一度実行すると、クライアント設定（マルサン木型などの接続）と DRY_RUN が初期値に戻ってしまいます）。" >&2
+  echo "コードの更新は bash scripts/deploy.sh、テスト用の録音 URL だけなら次の1行:" >&2
+  echo "  RECORDING_TOKEN_SECRET=\"\$(gcloud secrets versions access latest --secret=recording-token-secret ${LOC_FLAG[*]})\" python3 scripts/issue_test_url.py --service-url \"\$(gcloud run services describe ${SERVICE} --region=${REGION} --format='value(status.url)')\"" >&2
+  exit 1
+fi
 
 step "1. Cloud Build API"
 gcloud services enable cloudbuild.googleapis.com
@@ -124,4 +134,4 @@ step "6. テスト用の録音 URL（24時間有効。iPhone の Safari で開�
 RECORDING_TOKEN_SECRET="$(gcloud secrets versions access latest --secret=recording-token-secret "${LOC_FLAG[@]}")" \
   python3 scripts/issue_test_url.py --service-url "$SERVICE_URL"
 echo
-echo "もう1本発行するとき: bash scripts/setup_recorder_test.sh をもう一度実行するか、上の手順6だけを実行してください。"
+echo "もう1本発行するとき: 上の手順6のコマンドだけを実行してください（このスクリプトは初回専用です）。"

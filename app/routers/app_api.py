@@ -35,13 +35,14 @@ MAX_CONTACTS = 20
 
 @router.get("/me")
 async def me(user: AppUserDep, rt: RuntimeDep) -> dict[str, Any]:
-    config = rt.client_services(user.client_id).config
+    cs = rt.client_services(user.client_id)
+    config = cs.config
     return {
         "client_id": user.client_id,
         "client_name": config.display_name,
         "user": {"id": user.user_id, "name": user.name, "email": user.email},
         "gps_available": bool(config.app and config.app.maps_api_key),
-        "dry_run": rt.settings.dry_run,
+        "dry_run": cs.dry_run,
     }
 
 

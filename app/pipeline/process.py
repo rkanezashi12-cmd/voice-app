@@ -69,7 +69,9 @@ async def build_source(rt: Any, cs: ClientServices, req: ProcessRequest) -> Tran
     if req.source == "web_recording":
         if not req.record_id:
             raise PermanentError("record_id がありません")
-        return WebRecordingSource(rt.storage, rt.ai, rt.settings, cs.client_id, req.record_id)
+        return WebRecordingSource(
+            rt.storage, rt.ai, rt.settings, cs.client_id, req.record_id, dry_run=cs.dry_run
+        )
     recall = await cs.recall()
     config = cs.config.need_recall()
     first = req.wait_count == 0

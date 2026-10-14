@@ -96,3 +96,26 @@ async def test_regional_secrets_use_regional_endpoint(monkeypatch: pytest.Monkey
     assert await resolver.get(regional) == "value-of-backend-api-key"
     assert await resolver.get(global_ref) == "value-of-recall-api-key"
     assert created == [{"api_endpoint": "secretmanager.asia-northeast1.rep.googleapis.com"}, None]
+
+
+@pytest.mark.parametrize(
+    ("client_value", "service_value", "expected"),
+    [(None, False, False), (None, True, True), (True, False, True), (False, True, False)],
+)
+def test_client_can_override_dry_run_and_test_names(
+    client_value: bool | None, service_value: bool, expected: bool
+) -> None:
+    # 2つ目のクライアントだけ DRY_RUN のまま始められる（null ならサービス全体の設定に従う）
+    import httpx
+
+    from app.client_services import ClientServices
+    from tests.conftest import NoNetwork, make_settings
+
+    config = base_client_config()
+    config["clients"]["default"]["dry_run"] = client_value
+    config["clients"]["default"]["crm_test_records"] = client_value
+    client = ClientRegistry.from_dict(config).get("default")
+    settings = make_settings(dry_run=service_value, crm_test_records=service_value)
+    cs = ClientServices(client, settings, SecretResolver(), httpx.AsyncClient(transport=NoNetwork()))
+    assert cs.dry_run is expected
+    assert cs.test_records is expected

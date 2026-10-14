@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # バックエンド（Cloud Run）から Zoho CRM に接続する設定を行う（Cloud Shell で実行する想定）。
 #
-#   cd ~/voice-app && bash scripts/setup_zoho_connection.sh
+#   cd ~/voice-app && bash scripts/setup_zoho_connection.sh                                   # マルサン木型（default）
+#   cd ~/voice-app && APP_CLIENT=monodemo ORG_ID=<組織 ID> bash scripts/setup_zoho_connection.sh  # 2つ目以降のクライアント
 #
 # 行うこと（何度実行しても壊れない。CRM には何も書き込まない）:
 #   1. Self Client の Client ID / Secret と認可コードを聞き、リフレッシュトークンに交換する（画面に出さない）
 #   2. 接続先の組織を表示し、合っているか確かめる（違えば何も保存せずに止まる）
 #   3. 商談記録・用語辞書の項目が読めるか、バックエンドに要る権限（スコープ）がそろっているかを確かめる
-#   4. Secret Manager に保存する（zoho-client-id / zoho-client-secret / zoho-refresh-token）
-#   5. Cloud Run のクライアント設定（CLIENTS_CONFIG_JSON）に zoho を足す（DRY_RUN は変えない）
+#   4. Secret Manager に保存する（default は zoho-client-id / zoho-client-secret / zoho-refresh-token、
+#      ほかのクライアントは <APP_CLIENT>-zoho-client-id などクライアントの名前を頭に付けた別のシークレット）
+#   5. Cloud Run のクライアント設定（CLIENTS_CONFIG_JSON）のそのクライアントにだけ zoho を足す（ほかのクライアント・DRY_RUN は変えない）
+# 2つ目以降のクライアントは、先に scripts/setup_client.sh でクライアントを足しておく（DRY_RUN のまま始まる）。
+# ORG_ID（接続先の組織 ID）が必須で、違う組織の認可コードなら何も保存せずに止まる。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -17,7 +21,8 @@ REGION="asia-northeast1"
 SERVICE="meeting-notes"
 RUN_SA="meeting-notes-run@${PROJECT}.iam.gserviceaccount.com"
 APP_CLIENT="${APP_CLIENT:-default}" # クライアント設定のキー
-DC="${DC:-us}"                      # Zoho の DC（マルサン木型は us）
+DC="${DC:-us}"                      # Zoho の DC（マルサン木型・ものづくりSFAデモ2 は us）
+ORG_ID="${ORG_ID:-}"                # 接続先の組織 ID（default 以外は必須。違う組織なら止まる）
 # CLAUDE.md の8つ＋接続先の組織の確認に使う ZohoCRM.org.READ（読み取りのみ）
 SCOPES="ZohoCRM.modules.custom.ALL,ZohoCRM.modules.accounts.READ,ZohoCRM.modules.contacts.READ,ZohoCRM.modules.deals.READ,ZohoCRM.coql.READ,ZohoCRM.users.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.org.READ"
 
@@ -66,6 +71,17 @@ save_secret() {
   echo "保存しました: ${name}"
 }
 
+[[ "$APP_CLIENT" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || fail "APP_CLIENT は英小文字・数字・ハイフン（32文字まで）にしてください"
+# シークレットの名前。default（マルサン木型）は今までの名前のまま、ほかのクライアントは名前を頭に付けて分ける
+secret_name() { if [ "$APP_CLIENT" = default ]; then echo "$1"; else echo "${APP_CLIENT}-$1"; fi; }
+SECRET_CLIENT_ID="$(secret_name zoho-client-id)"
+SECRET_CLIENT_SECRET="$(secret_name zoho-client-secret)"
+SECRET_REFRESH_TOKEN="$(secret_name zoho-refresh-token)"
+if [ "$APP_CLIENT" != default ]; then
+  [[ "$ORG_ID" =~ ^[0-9]{6,25}$ ]] ||
+    fail "2つ目以降のクライアントは ORG_ID（接続先の組織 ID。数字）を付けて実行してください（例: APP_CLIENT=${APP_CLIENT} ORG_ID=… bash scripts/setup_zoho_connection.sh）"
+fi
+
 case "$DC" in
   us) export ZOHO_DC=com ;;
   au) export ZOHO_DC=com.au ;;
@@ -88,9 +104,18 @@ fi
 SERVICE_URL="$(gcloud run services describe "$SERVICE" --region="$REGION" --format='value(status.url)' 2>/dev/null)" ||
   fail "Cloud Run のサービス ${SERVICE} が見つかりません（先に scripts/setup_recorder_test.sh を実行）"
 echo "プロジェクト: ${PROJECT} / サービス: ${SERVICE_URL} / シークレット: ${REF_PREFIX}"
+echo "クライアント: ${APP_CLIENT} / Zoho の DC: ${DC} / 保存先: ${SECRET_CLIENT_ID}・${SECRET_CLIENT_SECRET}・${SECRET_REFRESH_TOKEN}"
+if [ "$APP_CLIENT" != default ]; then
+  gcloud run services describe "$SERVICE" --region="$REGION" --format=json | python3 -c '
+import json, sys
+svc = json.load(sys.stdin)
+env = {e.get("name"): e.get("value") for e in svc["spec"]["template"]["spec"]["containers"][0].get("env", [])}
+sys.exit(0 if sys.argv[1] in json.loads(env.get("CLIENTS_CONFIG_JSON") or "{}").get("clients", {}) else 1)
+' "$APP_CLIENT" || fail "クライアント ${APP_CLIENT} がまだありません。先に APP_CLIENT=${APP_CLIENT} bash scripts/setup_client.sh を実行してください"
+fi
 
 step "1. Self Client の Client ID と Secret"
-echo "api-console.zoho.com を、バックエンドを動かす Zoho ユーザー（マルサン木型の管理者）で開き、"
+echo "api-console（DC が us なら https://api-console.zoho.com）を、バックエンドを動かす Zoho ユーザー（接続先の組織の管理者）で開き、"
 echo "Self Client の「Client Secret」タブの値を1つずつ貼って Enter を押してください。"
 ask ZOHO_CLIENT_ID "Client ID: "
 ask ZOHO_CLIENT_SECRET "Client Secret（表示されません）: " hidden
@@ -103,7 +128,7 @@ echo "  Scope（前回の CRM 作成用とは違います。この行を最後�
 echo "    ${SCOPES}"
 echo "  Time Duration: 10 minutes"
 echo "  Scope Description: meeting-notes backend"
-echo "  組織を選ぶ画面が出たら、接続先の本番組織（マルサン木型）を選ぶ"
+echo "  組織を選ぶ画面が出たら、接続先の組織を選ぶ（クライアント ${APP_CLIENT}）"
 ZOHO_REFRESH_TOKEN=""
 for _ in 1 2 3; do
   ask CODE "認可コード: "
@@ -125,6 +150,9 @@ EXPECTED_ORG_ID="$(printf '%s\n' "$ORG_OUT" | sed -n 's/^id: //p')"
 EXPECTED_ORG_DOMAIN="$(printf '%s\n' "$ORG_OUT" | sed -n 's/^domain_name: //p')"
 EXPECTED_COMPANY_NAME="$(printf '%s\n' "$ORG_OUT" | sed -n 's/^company_name: //p')"
 export EXPECTED_ORG_ID EXPECTED_ORG_DOMAIN EXPECTED_COMPANY_NAME
+if [ -n "$ORG_ID" ] && [ "$EXPECTED_ORG_ID" != "$ORG_ID" ]; then
+  fail "接続先の組織 ID（${EXPECTED_ORG_ID}）が ORG_ID（${ORG_ID}）と違います。何も保存していません。認可コードの発行で組織の選択を確かめてください"
+fi
 confirm "上の組織（会社名と type: production）で合っていれば yes、違えば no: " \
   "何も保存していません。認可コードの発行で組織の選択を確かめてください。"
 
@@ -142,28 +170,32 @@ python3 scripts/crm_setup.py check-access ||
 step "6. Secret Manager に保存"
 confirm "Client ID・Secret・リフレッシュトークンを保存し、Cloud Run の設定に足します。よろしければ yes、やめるなら no: " \
   "何も保存していません。"
-save_secret zoho-client-id "$ZOHO_CLIENT_ID"
-save_secret zoho-client-secret "$ZOHO_CLIENT_SECRET"
-save_secret zoho-refresh-token "$ZOHO_REFRESH_TOKEN"
+save_secret "$SECRET_CLIENT_ID" "$ZOHO_CLIENT_ID"
+save_secret "$SECRET_CLIENT_SECRET" "$ZOHO_CLIENT_SECRET"
+save_secret "$SECRET_REFRESH_TOKEN" "$ZOHO_REFRESH_TOKEN"
 
 step "7. Cloud Run のクライアント設定に zoho を足す（DRY_RUN は変えません。数分かかります）"
 CURRENT_JSON="$(gcloud run services describe "$SERVICE" --region="$REGION" --format=json)"
-NEW_CLIENTS="$(CURRENT_JSON="$CURRENT_JSON" python3 - "$APP_CLIENT" "$DC" "$REF_PREFIX" <<'PY'
+CONFIG_OUT="$(CURRENT_JSON="$CURRENT_JSON" python3 - "$APP_CLIENT" "$DC" "$REF_PREFIX" \
+  "$SECRET_CLIENT_ID" "$SECRET_CLIENT_SECRET" "$SECRET_REFRESH_TOKEN" <<'PY'
 import json
 import os
 import sys
 
-app_client, dc, prefix = sys.argv[1:4]
+app_client, dc, prefix, *secret_names = sys.argv[1:7]
 svc = json.loads(os.environ["CURRENT_JSON"])
 env = {e.get("name"): e.get("value") for e in svc["spec"]["template"]["spec"]["containers"][0].get("env", [])}
 clients = json.loads(env.get("CLIENTS_CONFIG_JSON") or "{}")
 client = clients.setdefault("clients", {}).setdefault(app_client, {})
-names = {"client_id": "zoho-client-id", "client_secret": "zoho-client-secret", "refresh_token": "zoho-refresh-token"}
+names = dict(zip(("client_id", "client_secret", "refresh_token"), secret_names, strict=True))
 client["zoho"] = {"dc": dc, **{key: f"sm:{prefix}/{name}/versions/latest" for key, name in names.items()}}
+# 1行目は環境変数に渡す形（ASCII だけ。日本語は \u 表記でアプリはそのまま読める）、2行目は画面に出す形
+print(json.dumps(clients, separators=(",", ":")))
 print(json.dumps(clients, ensure_ascii=False, separators=(",", ":")))
 PY
 )"
-echo "クライアント設定（秘密情報は参照だけ）: ${NEW_CLIENTS}"
+NEW_CLIENTS="$(sed -n 1p <<<"$CONFIG_OUT")"
+echo "クライアント設定（秘密情報は参照だけ）: $(sed -n 2p <<<"$CONFIG_OUT")"
 # JSON にカンマが含まれるので、区切り文字を @@ に変えて渡す。
 # 動いているインスタンスは古いトークンを覚えているので、設定が同じでも新しい版を出す（ZOHO_TOKEN_UPDATED_AT）
 gcloud run services update "$SERVICE" --region="$REGION" --quiet \
@@ -173,5 +205,5 @@ echo
 
 step "完了"
 echo "バックエンドが Zoho CRM（${EXPECTED_COMPANY_NAME}）に接続できるようになりました。"
-echo "DRY_RUN は true のままなので、CRM には書き込みません。"
+echo "DRY_RUN は変えていません（2つ目以降のクライアントは、scripts/client_mode.sh で書き込みにするまで CRM に書き込みません）。"
 echo "この Self Client はバックエンドが使い続けます。api-console で削除しないでください。"

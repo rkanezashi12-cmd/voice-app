@@ -19,6 +19,7 @@ const LOGIN_ERRORS = {
     "CRM のプロファイルで API の利用（Zoho CRM API Access）が許可されていません。CRM の管理者に許可してもらってください。",
   inactive: "CRM のユーザーが有効ではありません。CRM の管理者に確認してください。",
   failed: "ログインを確かめられませんでした。少し待ってから、もう一度ログインしてください。",
+  other_client: "別の会社の CRM にログインしています。この URL の会社の CRM のアカウントで、ログインし直してください。",
 };
 
 export function loginErrorText(code) {
