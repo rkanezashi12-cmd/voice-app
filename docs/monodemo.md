@@ -270,3 +270,7 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
   関数の本文は `{` と `}` の間だけを置き換えると「Improper code format」になったので、1行目のシグネチャから全文を貼って保存した
 - 2026-10-15：手順7（ユーザーの指示で `client_mode.sh --write`。monodemo だけ dry_run=false、【TEST】あり）。直後の
   `marusan_snapshot.sh check` は OK
+- 2026-10-15：手順8（`setup_app_login.sh`）。1回目は Google の API を有効にする操作が 429（1分あたりの回数の上限）で止まった
+  （保存の前なので何も保存していない）。1〜2分おいて2回目で完了。`monodemo-app-login-client-id` / `monodemo-app-login-client-secret` /
+  `monodemo-app-session-secret` / `monodemo-app-maps-api-key`（地図のキーは `monodemo-app-geocoding-20261014152750`）。
+  録音アプリの URL は `https://meeting-notes-tnpxeypzla-an.a.run.app/app/?c=monodemo`。スクリプトは、有効な API を有効にし直さないように直した

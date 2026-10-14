@@ -99,6 +99,8 @@ case "$1 $2" in
       *) echo "想定外の呼び出し: $*" >&2; exit 2 ;;
     esac ;;
   "services enable") exit 0 ;;
+  # 有効な API は $SIM/enabled-apis に1行ずつ（無ければ何も有効でない）
+  "services list") cat "$SIM/enabled-apis" 2>/dev/null || true ;;
   "services api-keys")
     case "$3" in
       list)
@@ -906,3 +908,20 @@ def test_marusan_snapshot_detects_changes(recall_sim: Path) -> None:
     assert "シークレット zoho-refresh-token の版: 1 → 2" in res.stdout
     assert "クライアント設定の default が変わっています" in res.stdout
     assert "DRY_RUN が変わっています" in res.stdout
+
+
+def test_setup_app_login_skips_enabling_apis_that_are_already_enabled(recall_sim: Path) -> None:
+    """有効にする操作は1分あたりの回数に上限がある（2026-10-14 に 429 で止まった）ので、有効な API は有効にし直さない。"""
+    (recall_sim / "enabled-apis").write_text("geocoding-backend.googleapis.com\napikeys.googleapis.com\n")
+    clients = {"clients": {"default": {"zoho": {"dc": "us"}}}}
+    res = _run_script(
+        recall_sim, "setup_app_login.sh", ["1000.LOGINID", "login-secret", "yes", "yes"], clients
+    )
+    assert res.returncode == 0, res.stderr
+    assert not [c for c in _gcloud_calls(recall_sim) if c[:2] == ["services", "enable"]]
+    (recall_sim / "enabled-apis").write_text("apikeys.googleapis.com\n")
+    (recall_sim / "gcloud.log").write_text("")
+    res = _run_script(recall_sim, "setup_app_login.sh", ["", "", "yes", "no", "yes"], clients)
+    assert res.returncode == 0, res.stderr
+    enables = [c for c in _gcloud_calls(recall_sim) if c[:2] == ["services", "enable"]]
+    assert [c[2] for c in enables] == ["geocoding-backend.googleapis.com"]
