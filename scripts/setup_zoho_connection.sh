@@ -126,8 +126,8 @@ step "2. 認可コード（10分で失効します。発行したらすぐ貼っ
 echo "同じ Self Client の「Generate Code」タブで次を入れて「Create」を押してください。"
 echo "  Scope（前回の CRM 作成用とは違います。この行を最後まで貼ってください）:"
 echo "    ${SCOPES}"
-echo "  Time Duration: 10 minutes"
-echo "  Scope Description: meeting-notes backend"
+echo "  Code expiry duration（Time Duration）: 10 minutes"
+echo "  Description: meeting notes backend（記号を入れると断られることがある）"
 echo "  組織を選ぶ画面が出たら、接続先の組織を選ぶ（クライアント ${APP_CLIENT}）"
 ZOHO_REFRESH_TOKEN=""
 for _ in 1 2 3; do

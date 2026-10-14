@@ -256,3 +256,7 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
   商談記録・用語辞書と全項目が API 名どおりに作成された。デモ2の連絡先の表示名は「見込み客・担当者」で、
   先方担当者（連絡先）の中間モジュールは「商談記録 X 見込み客・担当者」（API 名 `X`）、連絡先の逆向きの項目は `field20`
   （表示名「商談記録」）、中間モジュールの連絡先のルックアップは `field20_1`
+- 2026-10-14：手順5（`setup_zoho_connection.sh`）。組織の照合・項目の読み取り・権限（スコープ）の確認がすべて OK で、
+  `monodemo-zoho-client-id` / `monodemo-zoho-client-secret` / `monodemo-zoho-refresh-token` に保存した。`dry_run: true` のまま。
+  api-console の Generate Code の画面は「Code expiry duration」（既定 3 minutes。10 minutes に変える）・「Description」で、
+  Description に `meeting-notes backend`（ハイフン入り）を入れたらエラーになった（記号を除いて通った）
