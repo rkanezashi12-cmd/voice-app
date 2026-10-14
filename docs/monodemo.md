@@ -259,4 +259,4 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
 - 2026-10-14：手順5（`setup_zoho_connection.sh`）。組織の照合・項目の読み取り・権限（スコープ）の確認がすべて OK で、
   `monodemo-zoho-client-id` / `monodemo-zoho-client-secret` / `monodemo-zoho-refresh-token` に保存した。`dry_run: true` のまま。
   api-console の Generate Code の画面は「Code expiry duration」（既定 3 minutes。10 minutes に変える）・「Description」で、
-  Description に `meeting-notes backend`（ハイフン入り）を入れたらエラーになった（記号を除いて通った）
+  Description に `meeting-notes backend`（ハイフン入り）を入れたらエラーになった（エラーの文は未確認。記号を除いた説明文を案内して進めた）
