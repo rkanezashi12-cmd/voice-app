@@ -182,13 +182,21 @@ class WebRecordingSource:
     kind = "web_recording"
 
     def __init__(
-        self, storage: Any, ai: MeetingAI, settings: Settings, client_id: str, record_id: str
+        self,
+        storage: Any,
+        ai: MeetingAI,
+        settings: Settings,
+        client_id: str,
+        record_id: str,
+        *,
+        dry_run: bool | None = None,
     ) -> None:
         self.storage = storage
         self.ai = ai
         self.settings = settings
         self.client_id = client_id
         self.record_id = record_id
+        self.dry_run = dry_run
         self.prefix = ro.prefix(client_id, record_id)
 
     async def prepare(self) -> SourceInfo:
@@ -216,4 +224,4 @@ class WebRecordingSource:
         return await self.ai.transcribe(segments, ctx, glossary)
 
     async def cleanup(self) -> None:
-        await self.storage.delete_prefix(self.prefix)
+        await self.storage.delete_prefix(self.prefix, dry_run=self.dry_run)

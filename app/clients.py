@@ -123,6 +123,10 @@ class ClientConfig(_Model):
     # CRM ワークフロー・デスクトップアプリから呼ぶときの X-API-Key
     api_key: str | None = None
     timezone: str = "Asia/Tokyo"
+    # このクライアントだけ DRY_RUN・CRM_TEST_RECORDS を上書きする（null ならサービス全体の設定に従う）。
+    # 新しく足すクライアントは dry_run=true から始め、ユーザーの指示で false にする（scripts/client_mode.sh）
+    dry_run: bool | None = None
+    crm_test_records: bool | None = None
     # 自社のメールドメイン（取引先候補の検索から除外する）
     own_email_domains: tuple[str, ...] = ()
     zoho: ZohoConfig | None = None

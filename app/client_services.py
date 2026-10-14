@@ -61,6 +61,18 @@ class ClientServices:
     def client_id(self) -> str:
         return self.config.client_id
 
+    @property
+    def dry_run(self) -> bool:
+        """外部への書き込み（CRM・音声の削除）を止めるか。クライアントの設定があればそれ、無ければ DRY_RUN。"""
+        return self._settings.dry_run if self.config.dry_run is None else self.config.dry_run
+
+    @property
+    def test_records(self) -> bool:
+        """作る商談記録の名前に【TEST】を付けるか。クライアントの設定があればそれ、無ければ CRM_TEST_RECORDS。"""
+        if self.config.crm_test_records is None:
+            return self._settings.crm_test_records
+        return self.config.crm_test_records
+
     async def crm(self) -> CrmService:
         if self._crm is None:
             async with self._lock:
@@ -78,8 +90,8 @@ class ClientServices:
                         auth,
                         api_domain=zoho.api_base,
                         field_map=self.field_map,
-                        dry_run=self._settings.dry_run,
-                        test_records=self._settings.crm_test_records,
+                        dry_run=self.dry_run,
+                        test_records=self.test_records,
                     )
         return self._crm
 
@@ -92,7 +104,7 @@ class ClientServices:
                         self._http,
                         base_url=cfg.base_url,
                         api_key=await self._secrets.get(cfg.api_key),
-                        dry_run=self._settings.dry_run,
+                        dry_run=self.dry_run,
                     )
         return self._recall
 

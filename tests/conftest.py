@@ -76,9 +76,9 @@ class FakeStorage:
     async def download(self, object_name: str, dest: Path) -> None:
         await asyncio.to_thread(dest.write_bytes, self.objects[object_name])
 
-    async def delete_prefix(self, prefix: str) -> int:
+    async def delete_prefix(self, prefix: str, *, dry_run: bool | None = None) -> int:
         self.deleted_prefixes.append(prefix)
-        if self.dry_run:
+        if self.dry_run if dry_run is None else dry_run:
             return 0
         names = [n for n in self.objects if n.startswith(prefix)]
         for n in names:
@@ -421,6 +421,10 @@ class FakeClientServices:
     @property
     def client_id(self) -> str:
         return self.config.client_id
+
+    @property
+    def dry_run(self) -> bool:
+        return self._crm.dry_run if self.config.dry_run is None else self.config.dry_run
 
     async def crm(self) -> FakeCrm:
         return self._crm

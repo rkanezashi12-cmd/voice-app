@@ -16,6 +16,10 @@
 
 H5d・H6・H7d はデスクトップ録音（入口C。Phase 2）を初めて動かすときに確かめる。
 
+複数のクライアントで同じ Recall.ai のアカウントを使うとき（2026-10-14 追加）、Webhook の振り分けは `metadata.client_id` に頼る
+（`app/routers/webhooks.py`）。ボットの通知に `data.bot.metadata` が入ることは H2 で確認済み。デスクトップ（`sdk_upload`）の通知に
+`metadata` が入るかは未確認（H5d・H6）。入らなければ、共有のアカウントではその通知を処理しない（`webhook.client_unresolved` を出す）。
+
 確認済み（2026-10-01 日本時間、マルサン木型の本番組織と Google Meet で、ボットの予約から録画の削除まで通しで処理。
 [recall-bot.md](recall-bot.md) の「記録」）：
 

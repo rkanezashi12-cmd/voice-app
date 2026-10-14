@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from app.errors import ExternalServiceError
-from app.pipeline.process import ProcessRequest, run_process
+from app.pipeline.process import ProcessRequest, build_source, run_process
 from app.runtime import Runtime
 from app.services.audio import AudioSegment
 from tests.conftest import F, FakeCrm, FakeLlm, FakeRecall, FakeStorage, FakeTasks, S, make_settings
@@ -360,3 +360,23 @@ async def test_desktop_flow_updates_linked_record(runtime: Runtime, crm: FakeCrm
     assert outcome.record_id == "7001"
     assert crm.record("7001")[F.status] == S.done
     assert [w[0] for w in crm.writes] == ["update", "update"]
+
+
+async def test_web_recording_keeps_audio_when_the_client_is_dry_run(
+    runtime: Runtime, storage: FakeStorage
+) -> None:
+    """クライアントの dry_run（2つ目のクライアントは true で始める）なら、サービス全体が書き込みでも音声を消さない。"""
+    cs = runtime.client_services("default")
+    cs.config = cs.config.model_copy(update={"dry_run": True})
+    storage.objects["recordings/default/6001/s/000000.m4a"] = b"audio"
+    source = await build_source(
+        runtime, cs, ProcessRequest(client_id="default", source="web_recording", record_id="6001")
+    )
+    await source.cleanup()
+    assert storage.objects, "音声は残す"
+    cs.config = cs.config.model_copy(update={"dry_run": False})
+    source = await build_source(
+        runtime, cs, ProcessRequest(client_id="default", source="web_recording", record_id="6001")
+    )
+    await source.cleanup()
+    assert not storage.objects
