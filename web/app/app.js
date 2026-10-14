@@ -540,7 +540,9 @@ function wireEvents() {
 async function init() {
   const params = new URLSearchParams(window.location.search);
   const client = params.get("c");
-  if (client && /^[a-z0-9][a-z0-9-]{0,31}$/.test(client)) state.client = client;
+  // URL に会社（?c=）があるときだけ、ログイン中の会社と同じかを確かめる。無ければログイン中の会社をそのまま使う
+  const clientInUrl = Boolean(client && /^[a-z0-9][a-z0-9-]{0,31}$/.test(client));
+  if (clientInUrl) state.client = client;
   const loginError = params.get("login_error");
   wireEvents();
   try {
@@ -555,10 +557,11 @@ async function init() {
   }
   // ログインの Cookie は会社（クライアント）をまたいで1つ。URL の会社と違う会社のログインのまま使うと、
   // 別の会社の CRM に商談記録を作ってしまうので、URL の会社でログインし直してもらう
-  if (state.me.client_id !== state.client) {
+  if (clientInUrl && state.me.client_id !== state.client) {
     showLogin("other_client");
     return;
   }
+  state.client = state.me.client_id || state.client;
   if (loginError) window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
   show("view-loading", false);
   setChrome(true);
