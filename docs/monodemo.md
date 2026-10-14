@@ -265,8 +265,7 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
   `monodemo-zoho-client-id` / `monodemo-zoho-client-secret` / `monodemo-zoho-refresh-token` に保存した。`dry_run: true` のまま。
   api-console の Generate Code の画面は「Code expiry duration」（既定 3 minutes。10 minutes に変える）・「Description」で、
   Description に `meeting-notes backend`（ハイフン入り）を入れたらエラーになった（エラーの文は未確認。記号を除いた説明文を案内して進めた）
-
 - 2026-10-15 00:13：手順6（変数・関数 `issue_recording_url`・ワークフロー「録音用URLの発行」）。テストの商談記録
   「【TEST】録音URLの確認」で、バックエンドのログに `recording.url_issued`（client_id=monodemo）が出て、CRM の「録音用URL」は
-  空のまま（monodemo の `dry_run: true` が効いている。サービス全体の DRY_RUN は false）。CRM の関数の実行ログは数分遅れて出た。
+  空のまま（monodemo の `dry_run: true` が効いている。サービス全体の DRY_RUN は false）。CRM の関数の実行ログには直後は出なかった（画面に「反映には最大で5分」とある）。
   関数の本文は `{` と `}` の間だけを置き換えると「Improper code format」になったので、1行目のシグネチャから全文を貼って保存した
