@@ -238,3 +238,28 @@ async def test_logs_hold_no_inquiry_or_need_text(
         "計量の精度",
     ):
         assert secret not in logged
+
+
+async def test_top_needs_are_ranked_by_count_and_examples_span_companies(
+    runtime: Runtime, crm: FakeCrm, llm: FakeLlm
+) -> None:
+    crm.add(A.module, ANALYSIS_ID, {A.period_from: "2026-10-01", A.period_to: "2026-10-31"})
+    for i, company in enumerate(["A社", "A社", "B社", "C社"]):
+        crm.add(NEED.module, f"n{i}", {
+            "Created_Time": "2026-10-06T12:00:00+09:00", NEED.name: f"声{i}", NEED.company: company, NEED.source_type: "WEB問合せ",
+            NEED.need_date: "2026-10-06", NEED.extract_key: f"inquiry:x{i}:1",
+        })  # fmt: skip
+    llm.analyze_output = json.dumps(
+        {
+            "themes": [
+                {"theme": "少ない", "description": "d", "need_ids": ["n3"]},
+                {"theme": "多い", "description": "d", "need_ids": ["n0", "n1", "n2"]},
+            ],
+            "matched": [],
+            "product_ideas": [],
+        }
+    )
+    await run(runtime)
+    top = analysis_writes(crm)[-1][A.top_needs]
+    assert top.index("1. 多い（3件・2社）") < top.index("2. 少ない（1件・1社）"), "件数の多い順"
+    assert "例：A社「声0」、B社「声2」、A社「声1」" in top, "別の会社の例を先に"
