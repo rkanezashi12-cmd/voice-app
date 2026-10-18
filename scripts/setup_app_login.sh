@@ -243,7 +243,16 @@ MAPS_ACTION=""      # create（新しいキーを作る）/ keep（今のキー�
 MAPS_KEYS=()        # このスクリプトが作ったキー（新しい順）
 OLD_MAPS_KEYS=()    # 新しいキーに切り替えたあとで削除する古いキー
 if yes_no "使うなら yes、使わないなら no: "; then
-  gcloud services enable geocoding-backend.googleapis.com apikeys.googleapis.com --project="$PROJECT"
+  # 有効になっていない API だけを有効にする（有効にする操作は1分あたりの回数に上限があり、続けて実行すると 429 で止まるため）
+  ENABLED="$(gcloud services list --enabled --project="$PROJECT" --format='value(config.name)' 2>/dev/null || true)"
+  TO_ENABLE=()
+  for api in geocoding-backend.googleapis.com apikeys.googleapis.com; do
+    grep -qx "$api" <<<"$ENABLED" || TO_ENABLE+=("$api")
+  done
+  if [ "${#TO_ENABLE[@]}" -gt 0 ]; then
+    gcloud services enable "${TO_ENABLE[@]}" --project="$PROJECT" ||
+      fail "API を有効にできませんでした（何も保存していません）。429（回数の上限）なら、1〜2分待ってからもう一度実行してください"
+  fi
   KEYS_TEXT="$(maps_keys)" || fail "API キーの一覧を読めませんでした"
   [ -z "$KEYS_TEXT" ] || mapfile -t MAPS_KEYS <<<"$KEYS_TEXT"
   MAPS_ACTION=create

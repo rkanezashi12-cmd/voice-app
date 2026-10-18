@@ -599,7 +599,10 @@ function readHash() {
 
 // 録音アプリから開いたときは、アプリと同じ下のタブ（入力・録音・日報）と「日報を見る」を出す
 function setupAppNav() {
-  const report = `/app/#report=${encodeURIComponent(state.recordId)}`;
+  // 録音アプリの URL には会社（クライアント）を付ける（付けないと default の画面になり、別の会社のログインになる）
+  const app = `/app/?c=${encodeURIComponent(clientFromToken(state.token) || "default")}`;
+  const report = `${app}#report=${encodeURIComponent(state.recordId)}`;
+  $("app-tab-input").href = `${app}#input`;
   $("app-tab-report").href = report;
   $("btn-report").href = report;
   show("app-nav", true);
@@ -607,14 +610,25 @@ function setupAppNav() {
   document.body.classList.add("from-app");
 }
 
-function recordIdFromToken(token) {
+// トークンの中身（署名はサーバーが確かめる。ここでは画面の表示とリンクにだけ使う）
+function tokenPayload(token) {
   try {
     const body = token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
     const payload = JSON.parse(atob(body + "=".repeat((4 - (body.length % 4)) % 4)));
-    return typeof payload.r === "string" ? payload.r : "";
+    return payload && typeof payload === "object" ? payload : {};
   } catch {
-    return "";
+    return {};
   }
+}
+
+function recordIdFromToken(token) {
+  const r = tokenPayload(token).r;
+  return typeof r === "string" ? r : "";
+}
+
+function clientFromToken(token) {
+  const c = tokenPayload(token).c;
+  return typeof c === "string" && /^[a-z0-9][a-z0-9-]{0,31}$/.test(c) ? c : "";
 }
 
 function loadSettings() {

@@ -285,7 +285,10 @@ await run("GPS の候補 → 担当者を複数選択・追加 → 録音画面�
     contacts: ["田中 太郎", "山本 次郎", "鈴木 一郎"],
     contact_ids: ["4001", "4002"],
   });
-  assert.equal(await page.locator("#app-tab-report").getAttribute("href"), `/app/#report=${visit.id}`);
+  // 録音画面から録音アプリに戻るリンクには会社（?c=）を付ける（2026-10-15、付いていなくて別の会社のログインになった）
+  assert.equal(await page.locator("#app-tab-report").getAttribute("href"), `/app/?c=default#report=${visit.id}`);
+  assert.equal(await page.locator("#app-tab-input").getAttribute("href"), "/app/?c=default#input");
+  assert.equal(await page.locator("#btn-report").getAttribute("href"), `/app/?c=default#report=${visit.id}`);
   await page.locator("#view-main").waitFor();
   await shot(page, "05-recorder");
   assert.ok(server.headers.every((h) => h === "meeting-notes-app"), "書き込みには専用のヘッダーを付ける");

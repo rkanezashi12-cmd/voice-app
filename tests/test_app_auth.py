@@ -14,7 +14,7 @@ from app.deps import tasks_oidc
 from app.main import create_app
 from app.runtime import Runtime
 from app.services.zoho_login import ZohoLoginError, ZohoUser
-from app.web_session import SESSION_COOKIE, STATE_COOKIE, verify_session
+from app.web_session import CLIENT_HINT_COOKIE, SESSION_COOKIE, STATE_COOKIE, verify_session
 from tests.conftest import ORG_ID, SESSION_SECRET, FakeLogin
 
 
@@ -148,3 +148,27 @@ def test_callback_accepts_same_data_center(https_client: TestClient) -> None:
         },
     )
     assert res.headers["location"] == "/app/?c=default"
+
+
+def test_login_remembers_the_client_for_failed_callbacks(https_client: TestClient) -> None:
+    res = https_client.get("/auth/login", params={"c": "default"})
+    hint = set_cookies(res)[CLIENT_HINT_COOKIE][CLIENT_HINT_COOKIE]
+    assert hint.value == "default"
+    assert hint["path"] == "/auth"
+
+
+@pytest.mark.parametrize("state", ["", "broken-state"])
+def test_unreadable_state_returns_to_the_client_that_started_login(
+    https_client: TestClient, state: str
+) -> None:
+    """2026-10-15：monodemo のログインが期限切れになり、default（マルサン木型）の画面に戻ってログインが入れ替わった。"""
+    headers = {"cookie": f"{CLIENT_HINT_COOKIE}=monodemo"}
+    res = https_client.get("/auth/callback", params={"code": "auth-code", "state": state}, headers=headers)
+    assert res.headers["location"] == "/app/?c=monodemo&login_error=expired"
+    assert SESSION_COOKIE not in set_cookies(res)
+
+
+def test_bad_client_hint_falls_back_to_default(https_client: TestClient) -> None:
+    headers = {"cookie": f"{CLIENT_HINT_COOKIE}=Bad_ID"}
+    res = https_client.get("/auth/callback", params={"code": "auth-code", "state": "broken"}, headers=headers)
+    assert res.headers["location"] == "/app/?c=default&login_error=expired"

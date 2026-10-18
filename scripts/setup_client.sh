@@ -128,4 +128,4 @@ echo
 step "完了"
 echo "クライアント ${APP_CLIENT} を足しました（CRM にはまだつないでいません）。次は docs/monodemo.md の手順へ。"
 echo "API キーの値は表示しません。CRM の変数 meeting_notes_api_key に貼るときに、"
-echo "APP_CLIENT=${APP_CLIENT} bash scripts/rotate_api_key.sh で作り直して表示します（docs/monodemo.md の手順5）。"
+echo "APP_CLIENT=${APP_CLIENT} bash scripts/rotate_api_key.sh で作り直して表示します（docs/monodemo.md の手順6）。"

@@ -35,6 +35,9 @@
 
 **各手順のあとで必ず次を実行し、`OK` が出ることを確かめる。** 違いが出たらそこで止めて、表示を送る。
 
+マルサン木型の改修は、これまでどおり行ってよい（`APP_CLIENT` を付けずにスクリプトを実行する）。わざとマルサン木型の設定・シークレットを
+変えたあとは、`bash scripts/marusan_snapshot.sh save` で控えを取り直す。
+
 ```bash
 cd ~/voice-app && bash scripts/marusan_snapshot.sh check
 ```
@@ -180,6 +183,10 @@ cd ~/voice-app && APP_CLIENT=monodemo ORG_ID=6719392000000020005 bash scripts/se
 
    `recording.url_issued` と `dry_run.skip` が出ていればよい。`auth.api_key_rejected` なら変数の API キーの貼り間違い
 
+商談記録・用語辞書は、デモ2の CRM の左のメニュー（「CRMのチームスペース」の一覧）に出る。上のタブの並びには出ないことがあるので、
+そのときは次の URL で開く：商談記録 `https://crm.zoho.com/crm/monodemo2/tab/CustomModule13`、用語辞書 `https://crm.zoho.com/crm/monodemo2/tab/CustomModule14`
+（`/crm/` のあとは組織 ID ではなく domain の `monodemo2`）。関数の実行ログは、反映に数分かかる。
+
 ボットの予約は、手順9（Recall.ai の設定）が済むまで動かない（`recall` の設定が無いので、関数「ボットを予約」の実行ログにエラーが出る。
 CRM には何も書かない）。手順9まではボットの商談記録を作らない。
 
@@ -248,3 +255,28 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
 - 2026-10-14：Zoho CRM のコネクタ（読み取り）で組織を確認（会社名・domain `monodemo2`・組織 ID・Asia/Tokyo・JPY・有料ライセンス1名）。
   商談記録（`MeetingRecords`）・用語辞書（`Glossary`）はまだ無い。既存のカスタムモジュールは Nippou・NippouLink・Inquiry・Repair・TEST・
   Claimmanagement・Deliveredproduct・CustomModule9・CustomModule12
+- 2026-10-14：手順1（デプロイ 68d328f）・手順2（`setup_client.sh`）。`marusan_snapshot.sh check` は各手順のあとで OK
+- 2026-10-14：手順3（Self Client。api-console.zoho.com、14 October 2026 作成）・手順4（`crm_setup.py apply`）。
+  商談記録・用語辞書と全項目が API 名どおりに作成された。デモ2の連絡先の表示名は「見込み客・担当者」で、
+  先方担当者（連絡先）の中間モジュールは「商談記録 X 見込み客・担当者」（API 名 `X`）、連絡先の逆向きの項目は `field20`
+  （表示名「商談記録」）、中間モジュールの連絡先のルックアップは `field20_1`
+- 2026-10-14：手順5（`setup_zoho_connection.sh`）。組織の照合・項目の読み取り・権限（スコープ）の確認がすべて OK で、
+  `monodemo-zoho-client-id` / `monodemo-zoho-client-secret` / `monodemo-zoho-refresh-token` に保存した。`dry_run: true` のまま。
+  api-console の Generate Code の画面は「Code expiry duration」（既定 3 minutes。10 minutes に変える）・「Description」で、
+  Description に `meeting-notes backend`（ハイフン入り）を入れたらエラーになった（エラーの文は未確認。記号を除いた説明文を案内して進めた）
+- 2026-10-15 00:13：手順6（変数・関数 `issue_recording_url`・ワークフロー「録音用URLの発行」）。テストの商談記録
+  「【TEST】録音URLの確認」で、バックエンドのログに `recording.url_issued`（client_id=monodemo）が出て、CRM の「録音用URL」は
+  空のまま（monodemo の `dry_run: true` が効いている。サービス全体の DRY_RUN は false）。CRM の関数の実行ログには直後は出なかった（画面に「反映には最大で5分」とある）。
+  関数の本文は `{` と `}` の間だけを置き換えると「Improper code format」になったので、1行目のシグネチャから全文を貼って保存した
+- 2026-10-15：手順7（ユーザーの指示で `client_mode.sh --write`。monodemo だけ dry_run=false、【TEST】あり）。直後の
+  `marusan_snapshot.sh check` は OK
+- 2026-10-15：手順8（`setup_app_login.sh`）。1回目は Google の API を有効にする操作が 429（1分あたりの回数の上限）で止まった
+  （保存の前なので何も保存していない）。1〜2分おいて2回目で完了。`monodemo-app-login-client-id` / `monodemo-app-login-client-secret` /
+  `monodemo-app-session-secret` / `monodemo-app-maps-api-key`（地図のキーは `monodemo-app-geocoding-20261014152750`）。
+  録音アプリの URL は `https://meeting-notes-tnpxeypzla-an.a.run.app/app/?c=monodemo`。スクリプトは、有効な API を有効にし直さないように直した
+- 2026-10-15：手順8のやり直し。1回目に貼ったのは Self Client の Client ID・Secret だったため、ログインが「無効なリダイレクトURI」に
+  なった。API コンソールの「voice_day」はマルサン木型（default）のログイン用クライアント（同じ Zoho アカウントにある。触らない）。
+  デモ2用の Server-based Applications のクライアントを新しく作り、`setup_app_login.sh` で貼り直して（各シークレットの版2）ログインできた。
+  地図のキーも作り直した（`monodemo-app-geocoding-20261014152750` を削除。マルサン木型の `app-geocoding-…` は消していない）。
+  途中で、期限切れのログインが default の画面に戻ってログインが入れ替わる不具合が見つかり、直した（`app/routers/app_auth.py`）
+- 手順8の注意：API コンソールでは、Self Client・voice_day（マルサン木型）と取り違えないように、デモ2用のクライアントの名前で選ぶ
