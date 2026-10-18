@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -100,6 +101,8 @@ async def test_extracts_new_sources_and_writes_report(runtime: Runtime, crm: Fak
     assert final[A.status] == "完了" and final[A.error_message] is None
     assert "ニーズ 3件" in final[A.counts] and "新しく抜き出した 2件" in final[A.counts]
     assert "1. 計量の精度（3件・3社）" in final[A.top_needs]
+    # ウィジェット（widgets/needs-analysis/app/analysis.js の THEME_HEAD）が読む形
+    assert re.match(r"^\s*(\d+)\.\s*(.+?)（(\d+)件・(\d+)社）\s*$", final[A.top_needs].split("\n")[0])
     assert "■ 計量の精度 × 高精度計量" in final[A.matched_needs]
     assert "求める声：3件・3社" in final[A.product_ideas]
     analyze = next(c for c in llm.calls if c["task"] == "needs_analyze")

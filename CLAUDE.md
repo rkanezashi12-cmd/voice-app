@@ -145,6 +145,7 @@ web/app/               録音アプリ（Zoho でログイン・訪問先と担�
 prompts/               transcribe.md / correct.md / summarize.md / schema.json
 crm/                   Deluge 関数の保管場所
 widgets/meeting-report/ PC の CRM の商談記録の画面に日報を出すウィジェット（ZIP は scripts/build_widget.py。docs/widget.md）
+widgets/needs-analysis/ PC の CRM の「ニーズ分析」の画面に結果をグラフと一覧で出すウィジェット（`--widget needs-analysis`。docs/needs-analysis.md）
 desktop/               Phase 2
 tests/                 pytest（外部 API はモック）、tests/js と tests/e2e は録音ページ・録音アプリ・ウィジェット
 ```
@@ -159,5 +160,6 @@ node --test tests/js/*.test.mjs            # 録音ページの純粋ロジッ�
 node tests/e2e/recorder.e2e.mjs            # Chromium の擬似マイクで録音ページを通しで確認
 node tests/e2e/app.e2e.mjs                 # 録音アプリ（/app/）を通しで確認（SCREENSHOT_DIR で画面も残せる）
 node tests/e2e/widget.e2e.mjs              # 商談日報ウィジェットを偽の Zoho SDK で確認
+node tests/e2e/widget-needs.e2e.mjs        # ニーズ分析ウィジェットを偽の Zoho SDK で確認
 python3 scripts/build_widget.py            # ウィジェットの ZIP を作る（dist/。Zoho の SDK を取りに行く）
 ```
