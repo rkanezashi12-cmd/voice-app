@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC
 
 import httpx
 import pytest
@@ -247,3 +248,80 @@ async def test_settings_reads_and_user(respx_mock: respx.MockRouter) -> None:
         assert await crm.get_user("../org") is None, "数字以外の ID では問い合わせない"
         with pytest.raises(ExternalServiceError):
             await crm.get_user("4")
+
+
+async def test_create_records_reports_each_row(respx_mock: respx.MockRouter) -> None:
+    token_route(respx_mock)
+    ok = {"code": "SUCCESS", "status": "success", "details": {"id": "n1"}}
+    dup = {"code": "DUPLICATE_DATA", "status": "error", "details": {"api_name": "Extract_Key"}}
+    bad = {"code": "INVALID_DATA", "status": "error", "details": {}}
+    post = respx_mock.post(f"{US_API}/CustomerNeeds").mock(
+        side_effect=[
+            httpx.Response(207, json={"data": [ok] * 99 + [dup]}),
+            httpx.Response(400, json={"data": [bad]}),
+        ]
+    )
+    async with httpx.AsyncClient() as http:
+        crm = make_crm(http)
+        rows = [{"Name": f"n{i}", "Extract_Key": f"k{i}"} for i in range(101)]
+        results = await crm.create_records("CustomerNeeds", rows)
+    assert len(post.calls) == 2, "100件ずつ送る"
+    first = json.loads(post.calls[0].request.content)
+    assert len(first["data"]) == 100 and first["trigger"] == []
+    assert first["data"][0]["Name"] == "【TEST】n0"
+    assert (
+        results[0] == ("n1", "created")
+        and results[99] == (None, "duplicate")
+        and results[100] == (None, "INVALID_DATA")
+    )
+
+
+async def test_create_records_rejects_other_modules_and_dry_run(respx_mock: respx.MockRouter) -> None:
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(CrmWriteForbidden):
+            await make_crm(http).create_records("Inquiry", [{"Name": "x"}])
+        assert await make_crm(http, dry_run=True).create_records("NeedsAnalyses", [{"Name": "x"}]) == [
+            (None, "dry-run")
+        ]
+    assert len(respx_mock.calls) == 0
+
+
+async def test_list_records_since_stops_at_older_rows(respx_mock: respx.MockRouter) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    token_route(respx_mock)
+    jst = timezone(timedelta(hours=9))
+    page1 = {
+        "data": [{"id": "1", "Created_Time": "2026-10-10T10:00:00+09:00"}],
+        "info": {"more_records": True},
+    }
+    page2 = {"data": [{"id": "2", "Created_Time": "2026-10-02T10:00:00+09:00"}, {"id": "3", "Created_Time": "2026-09-30T10:00:00+09:00"}],
+             "info": {"more_records": True}}  # fmt: skip
+    get = respx_mock.get(f"{US_API}/Inquiry").mock(
+        side_effect=[httpx.Response(200, json=page1), httpx.Response(200, json=page2)]
+    )
+    async with httpx.AsyncClient() as http:
+        rows, truncated = await make_crm(http).list_records_since(
+            "Inquiry", ["Request"], datetime(2026, 10, 1, tzinfo=jst), per_page=1
+        )
+    assert [r["id"] for r in rows] == ["1", "2"] and truncated is False
+    params = get.calls[0].request.url.params
+    assert params["sort_by"] == "Created_Time" and params["sort_order"] == "desc"
+    assert params["fields"] == "Created_Time,Request"
+
+
+async def test_list_records_since_reports_truncation(respx_mock: respx.MockRouter) -> None:
+    from datetime import datetime
+
+    token_route(respx_mock)
+    page = {
+        "data": [{"id": "1", "Created_Time": "2026-10-10T10:00:00+09:00"}],
+        "info": {"more_records": True},
+    }
+    respx_mock.get(f"{US_API}/Inquiry").mock(return_value=httpx.Response(200, json=page))
+    async with httpx.AsyncClient() as http:
+        crm = make_crm(http)
+        rows, truncated = await crm.list_records_since(
+            "Inquiry", [], datetime(2026, 1, 1, tzinfo=UTC), max_pages=2
+        )
+    assert len(rows) == 2 and truncated is True

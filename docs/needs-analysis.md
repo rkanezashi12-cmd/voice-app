@@ -1,4 +1,4 @@
-# ニーズ分析（設計。monodemo から）
+# ニーズ分析（monodemo から）
 
 商談（オンライン・対面）と WEB の問合せから、AI（Gemini）でお客様のニーズを抜き出して CRM にため、
 自社技術と照らし合わせて「応えられるニーズ」と「新商品開発の候補」を出す。CRM のボタンで随時実行する。メールは送らない。
@@ -20,9 +20,9 @@
   → CRM の関数 → バックエンド POST /api/needs/analyze（X-API-Key。すぐ返す）→ Cloud Tasks
   → /internal/needs-analyze
      1. 「ニーズ分析」の状態を「実行中」にする
-     2. 期間内の元を集める（読むだけ）
-        - 商談記録：状態「完了」の記録の 要約・課題・ニーズ・取引先名（文字起こし全文は使わない＝費用を抑える）
-        - 問合せ内容：「問合せ内容」（本文）が空でない記録の 本文・問合せ項目・会社名
+     2. 期間内の元を集める（読むだけ。期間は作成日時で、日本時間の日付で比べる）
+        - 商談記録：状態「完了」「取引先未設定」の記録の 要約・課題・ニーズ・取引先名（文字起こし全文は使わない＝費用を抑える）
+        - 問合せ内容：「問合せ内容」（本文）が10文字以上の記録の 本文・問合せ項目・会社名
      3. まだ抜き出していない元だけ、Gemini でニーズを抜き出す（20件ずつ。JSON スキーマ固定）
         → 「ニーズ」に1件ずつ作る（100件ずつまとめて作成。抽出キーが重複不可なので二重に作らない）
      4. 期間内の「ニーズ」全部と「自社技術」全部を Gemini に渡し、まとめ・順位・照らし合わせを出す
@@ -61,7 +61,7 @@
 | 会社名 | 1行 | `Company_Name` | 取引先名・問合せの会社名（文字） |
 | 根拠 | 複数行（小） | `Evidence` | 元の発言・本文の抜き出し（短く） |
 | 日付 | 日付 | `Need_Date` | 商談の日・問合せの日 |
-| 抽出キー | 1行・重複不可 | `Extract_Key` | `<商談記録 or 問合せ>:<記録 ID>:<番号>`（二重に作らないため） |
+| 抽出キー | 1行・重複不可 | `Extract_Key` | `meeting:<商談記録 ID>:<番号>` / `inquiry:<問合せ ID>:<番号>`（二重に作らないため） |
 | ニーズ分析 | ルックアップ（ニーズ分析） | `Analysis` | 抜き出したときの分析（新しいモジュール同士なので既存は変わらない） |
 
 ### ニーズ分析（API 名 `NeedsAnalyses`）— 人が作ってボタンを押す。結果はバックエンドが書く
@@ -71,7 +71,7 @@
 | 分析名 | 1行（主項目） | `Name` | 例：2026年10月 |
 | 期間（開始） | 日付 | `Period_From` | |
 | 期間（終了） | 日付 | `Period_To` | |
-| 対象 | 複数選択 | `Targets` | 商談 / WEB問合せ |
+| 対象 | 選択リスト | `Targets` | 商談とWEB問合せ（空のときもこれ） / 商談だけ / WEB問合せだけ |
 | 状態 | 選択リスト | `Analysis_Status` | 未実行 / 実行中 / 完了 / 失敗 |
 | 件数 | 1行 | `Counts` | 例：商談 12件・問合せ 85件 → ニーズ 140件（新しく抜き出した 30件） |
 | 上位のニーズ | 複数行（大） | `Top_Needs` | 似たニーズをまとめ、件数・社数の多い順 |
@@ -80,19 +80,95 @@
 | エラー内容 | 複数行（小） | `Error_Message` | |
 | 実行日時 | 日時 | `Analyzed_At` | |
 
-## CRM の画面で作るもの（API 非対応。手順書にする）
+## 動き方の細かいところ
 
-- 関数 `run_needs_analysis`（ボタン用）：記録の ID をバックエンドに送るだけ。変数 `meeting_notes_url` / `meeting_notes_api_key` は今のものを使う
-- ボタン「ニーズ分析を実行」（ニーズ分析の記録の画面）
+- 期間を空にすると、終了は今日、開始は終了の365日前。開始が終了より後なら「失敗」とエラー内容を書く
+- 抜き出しは20件ずつ、3つ並べて Gemini に頼む。返ってきた JSON が壊れていれば1回だけやり直す
+- 分析に渡すニーズは、新しい順に 800件まで。名前の先頭の【TEST】は Gemini に渡さない
+- Gemini が返した `need_ids` のうち、入力に無い ID は数えない（件数・社数は CRM のニーズから数える）
+- 429・5xx・通信エラーは Cloud Tasks がやり直す（最後の試行で「失敗」を書く）。直らない失敗（期間の誤り・記録が無い）はすぐ書く
+- 続けてボタンを押しても、60秒の間は1回にまとめる（Cloud Tasks のタスク名）
+- `dry_run` のクライアントでは、ニーズも結果も CRM に書かず、ログだけ出す（Gemini は呼ぶので、そのぶんの費用はかかる）
+- ログに出すのは ID・件数・期間だけ（問合せの本文・ニーズ・会社名・自社技術は出さない。`tests/test_needs.py` で確かめている）
+- 「ニーズ」の名前にも、`crm_test_records` が true なら【TEST】が付く
 
 ## バックエンド（コード）
 
-- クライアントの設定に `features.needs_analysis`（既定 false）。monodemo だけ true。false のクライアントでは API が 404
-- `app/field_map.py` に3つのモジュールの API 名。書き込みのガード（`app/services/crm.py`）に「ニーズ」「ニーズ分析」を足す（「自社技術」「問合せ内容」は読むだけ）
-- `app/routers/needs.py`（受け付け）・`app/needs/`（集める・抜き出す・分析する・書く）
-- プロンプトは `prompts/needs_extract.md` / `needs_analyze.md` と JSON スキーマ
+- クライアントの設定に `features.needs_analysis`（既定 false）。monodemo だけ true（`scripts/client_mode.sh --needs-on`）。false のクライアントでは API が 404
+- `app/field_map.py` の `needs` に4つのモジュール（問合せ内容・自社技術・ニーズ・ニーズ分析）の API 名と選択肢。
+  書き込みのガード（`app/services/crm.py`）に「ニーズ」「ニーズ分析」を足した（「自社技術」「問合せ内容」は読むだけ）
+- `app/routers/needs.py`（ボタンの受け付け `POST /api/needs/analyze`）・`app/needs/analysis.py`（集める・抜き出す・分析する・書く）・
+  `POST /internal/needs-analyze`（Cloud Tasks から）
+- プロンプトは `prompts/needs_extract.md` / `needs_analyze.md` と JSON スキーマ。思考の深さは `GEMINI_THINKING_NEEDS`（既定 low）
+- CRM の関数は `crm/run_needs_analysis.dg`、モジュールは `scripts/crm_setup.py` の `NEEDS_SPEC`（`plan needs` / `apply needs`）
 - 商談記録の処理（共通処理）は変えない。マルサン木型の動きは変わらない
-- テスト：偽の CRM・偽の Gemini で、二重に作らない・期間の絞り込み・失敗時の記録・機能が無効なクライアントで動かないこと
+- テスト：`tests/test_needs.py`（二重に作らない・期間と対象の絞り込み・失敗時の記録・機能が無効なクライアントで動かない・ログに本文を出さない）
+
+## 入れる手順（monodemo。ユーザーが行う）
+
+前後に `bash scripts/marusan_snapshot.sh save` / `check` を実行し、マルサン木型が変わっていないことを確かめる（CLAUDE.md §0）。
+
+### 1. コードを入れる（Cloud Shell、5分）
+
+PR をマージすると GitHub Actions がデプロイする。`features.needs_analysis` が false のクライアント（マルサン木型）では、
+ボタンの API が 404 を返すだけで、何も動かない。
+
+```bash
+cd ~/voice-app && git pull && bash scripts/marusan_snapshot.sh save
+```
+
+### 2. モジュールを作る（Cloud Shell、10分）
+
+[monodemo.md](monodemo.md) の手順4と同じ（認可コードを発行し直す。**組織は「ものづくりSFAデモ2」を選ぶ**）。違うのは
+`plan` / `apply` / `show-fields` の後ろに `needs` を付けることだけ。
+
+```bash
+python3 scripts/crm_setup.py show-org      # ものづくりSFAデモ2 / monodemo2 / 6719392000000020005 を目で確かめ、export の3行を実行
+python3 scripts/crm_setup.py plan needs    # 「ニーズ分析」「自社技術」「ニーズ」とその項目だけが出るはず。内容を送る
+python3 scripts/crm_setup.py apply needs   # yes
+python3 scripts/crm_setup.py show-fields needs   # 結果を送る（実物の形を記録する）
+```
+
+既存のモジュール（問合せ内容・商談記録など）は変えない。同じ表示名の別モジュールがあれば、何もせずに止まる。
+
+### 3. ニーズ分析を使えるようにする（Cloud Shell、3分）
+
+```bash
+APP_CLIENT=monodemo bash scripts/client_mode.sh --needs-on   # yes
+bash scripts/marusan_snapshot.sh check                       # 変わっていないことを確かめる
+```
+
+### 4. 関数とボタン（CRM の画面、10分）
+
+1. 設定 → 開発者向け機能 → 関数 →「新しい関数」。関数名 `run_needs_analysis`、表示名「ニーズ分析を実行」、
+   カテゴリ「ボタン」。中身は `crm/run_needs_analysis.dg` を**1行目（`string button.run_needs_analysis(String rec_id)`）から全部**貼る
+2. 引数の設定で `rec_id` に「ニーズ分析 Id」を割り当てる（API では設定できない。忘れると何もしない）
+3. 「ニーズ分析」のモジュール → 設定 → ボタン →「新しいボタン」。名前「ニーズ分析を実行」、表示する場所は記録の詳細画面、
+   動作は上の関数
+4. 変数 `meeting_notes_url` / `meeting_notes_api_key` は録音用URLの発行で作ったものをそのまま使う（新しく作らない）
+
+### 5. 自社技術を入れる（CRM の画面、15分）
+
+「自社技術」に、技術を数件入れる（技術名・概要・強み・対応できる範囲・用途・キーワード・状態）。資料は「添付」に付けてよい
+（今は分析で読まない）。
+
+### 6. 試す（CRM の画面、5分）
+
+1. 「ニーズ分析」を1件作る（分析名「【TEST】10月」、期間 2026-10-01〜2026-10-31、対象は空のまま）→ 保存
+2. 「ニーズ分析を実行」を押す →「ニーズ分析を始めました。…」と出る
+3. 数分後に再読み込みすると、状態が「完了」になり、件数・上位のニーズ・応えられるニーズ・新商品開発の候補が入る。
+   「ニーズ」に、抜き出したニーズが1件ずつできている（出典の記録の URL から元の記録を開ける）
+4. もう一度押しても、ニーズは増えない（抜き出し済みの元は抜き出し直さない）
+
+ログで確かめるとき：
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND jsonPayload.client_id="monodemo" AND jsonPayload.message=~"^needs\."' \
+  --project=voice-ai-510014 --freshness=1h --limit=20 \
+  --format='table(timestamp.date(tz=Asia/Tokyo),jsonPayload.message,jsonPayload.record_id,jsonPayload.new_needs,jsonPayload.needs_in_period)'
+```
+
+`needs.collected` → `needs.done` なら通っている。`needs.failed` ならエラー内容が「ニーズ分析」の記録にも書いてある。
 
 ## 後の段階
 

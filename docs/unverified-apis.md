@@ -155,6 +155,16 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 - `gcloud artifacts repositories set-cleanup-policies <リポジトリ> --location --policy=<JSON ファイル> --no-dry-run`。JSON は `[{"name", "action": {"type": "Keep"}, "mostRecentVersions": {"keepCount": 5}}, {"name", "action": {"type": "Delete"}, "condition": {"olderThan": "604800s"}}]`。Keep と Delete の両方に当てはまる版は残る（Keep が優先）。削除は1日に1回ほどの裏の処理で行われる
 - `--source` のデプロイが作るリポジトリは `cloud-run-source-deploy`（請求の SKU に Artifact Registry Storage 0.35 GiB・月が出ている）。`describe` の `sizeBytes` で大きさが取れる想定（取れなければ大きさを出さずに進む）。実行後に `list-cleanup-policies` の表示と、翌日の大きさで確かめる
 
+## ニーズ分析（docs/needs-analysis.md、2026-10-18 追加）
+
+| 項目 | 実装での想定 | 該当箇所 |
+|---|---|---|
+| レコード一覧の `sort_by=Created_Time&sort_order=desc` | 作成日時の新しい順に返る（2026-10-18、Zoho CRM のコネクタでデモ2の問合せ内容を読んで確かめた）。`page` 方式は 2,000 件まで（10ページ × 200件で止め、「新しい 2,000 件まで」と件数に書く） | `app/services/crm.py` の `list_records_since` |
+| まとめての作成（`POST /crm/v8/{module}`、100件まで） | 行ごとに `status: success` / `error`。一部だけ失敗すると HTTP 207（スキルに記載）。重複不可の項目が同じ行は `code: DUPLICATE_DATA`（未確認。違うコードなら件数のログに出るだけで、二重には作られない） | `app/services/crm.py` の `create_records` |
+| 記録を開く URL | `https://crm.zoho.<com など>/crm/<domain_name>/tab/<module_name（CustomModule3 など）>/<記録 ID>`（一覧の URL `…/tab/CustomModule3/custom-view/…/list` から推した形。開けなければ組み立てを直すだけ） | `app/needs/analysis.py` の `_record_links` |
+| ボタン用の関数の形 | `string button.<関数名>(String rec_id)`。返した文字列が画面にメッセージで出る（未確認。出なければ実行ログの `info` で確かめる） | `crm/run_needs_analysis.dg` |
+| ルックアップ（新しいモジュール同士）の作成 | 「ニーズ」→「ニーズ分析」のルックアップを `crm_setup.py` で作る（商談記録 → 取引先と同じ形。関連リストの名前は「ニーズ」） | `scripts/crm_setup.py` の `NEEDS_SPEC` |
+
 ## 優先度：中（動くが挙動が変わる）
 
 | # | 項目 | 実装での想定 | 該当箇所 |

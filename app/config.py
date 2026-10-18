@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     gemini_thinking_transcribe: str = "low"
     gemini_thinking_correct: str = "low"
     gemini_thinking_summarize: str = "low"
+    # ニーズ分析（抜き出し・まとめ）。テキストだけで深い推論は要らない
+    gemini_thinking_needs: str = "low"
 
     # 対面録音を Gemini に渡す単位（秒）と、区切りを無音位置に寄せる幅（秒）
     audio_segment_seconds: int = 1200
@@ -95,7 +97,12 @@ class Settings(BaseSettings):
             raise ValueError("GEMINI_LOCATION に global は使えません（リージョナルエンドポイントを使う）")
         return value.strip()
 
-    @field_validator("gemini_thinking_transcribe", "gemini_thinking_correct", "gemini_thinking_summarize")
+    @field_validator(
+        "gemini_thinking_transcribe",
+        "gemini_thinking_correct",
+        "gemini_thinking_summarize",
+        "gemini_thinking_needs",
+    )
     @classmethod
     def check_thinking_level(cls, value: str) -> str:
         level = value.strip().lower()
@@ -116,6 +123,8 @@ class Settings(BaseSettings):
             "transcribe": self.gemini_thinking_transcribe,
             "correct": self.gemini_thinking_correct,
             "summarize": self.gemini_thinking_summarize,
+            "needs_extract": self.gemini_thinking_needs,
+            "needs_analyze": self.gemini_thinking_needs,
         }.get(task, "")
 
     def need(self, name: str) -> Any:

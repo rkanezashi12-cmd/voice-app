@@ -1,0 +1,70 @@
+string button.run_needs_analysis(String rec_id)
+{
+	// ニーズ分析：「ニーズ分析」の記録のボタン「ニーズ分析を実行」から呼ぶ。バックエンドに分析を頼むだけで、CRM には書き込まない。
+	// 引数 rec_id に「ニーズ分析 Id」をマッピングすること（無いと rec_id が空になり、何もせずに終わる）。
+	// 結果（状態・件数・上位のニーズ・応えられるニーズ・新商品開発の候補）はバックエンドが数分後にこの記録に書く。
+	// 手順は docs/needs-analysis.md。
+	//
+	// CRM の変数（設定 → 開発者向け機能 → 変数。録音用URLの発行と同じもの）
+	VAR_URL = "meeting_notes_url";
+	VAR_API_KEY = "meeting_notes_api_key";
+	//
+	info "===== run_needs_analysis START rec_id=" + ifnull(rec_id, "(空)") + " =====";
+	if(rec_id == null || rec_id.trim() == "")
+	{
+		info "[run_needs_analysis] 中止: rec_id が空です。ボタンの引数のマッピング（rec_id = ニーズ分析 Id）を確認してください";
+		return "ボタンの設定（引数）が足りません。管理者に連絡してください。";
+	}
+	baseUrl = ifnull(zoho.crm.getOrgVariable(VAR_URL), "").toString().trim();
+	apiKey = ifnull(zoho.crm.getOrgVariable(VAR_API_KEY), "").toString().trim();
+	if(baseUrl == "" || apiKey == "")
+	{
+		info "[run_needs_analysis] 中止: 変数 " + VAR_URL + " / " + VAR_API_KEY + " が未設定です";
+		return "CRM の変数が設定されていません。管理者に連絡してください。";
+	}
+	if(baseUrl.endsWith("/"))
+	{
+		baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+	}
+	payload = Map();
+	payload.put("record_id", rec_id.trim());
+	headerMap = Map();
+	headerMap.put("X-API-Key", apiKey);
+	headerMap.put("Content-Type", "application/json");
+	// API キーはログに出さない
+	info "[run_needs_analysis] 送信 url=" + baseUrl + "/api/needs/analyze";
+	resp = Map();
+	message = "";
+	try
+	{
+		resp = invokeurl
+		[
+			url :baseUrl + "/api/needs/analyze"
+			type :POST
+			parameters:payload.toString()
+			headers:headerMap
+			detailed:true
+		];
+	}
+	catch (e)
+	{
+		info "[run_needs_analysis] ERROR: バックエンドに送信できませんでした " + e;
+		message = "分析を始められませんでした（通信エラー）。少し待ってからもう一度押してください。";
+	}
+	if(message == "")
+	{
+		respCode = ifnull(resp.get("responseCode"), 0);
+		info "[run_needs_analysis] 応答コード=" + respCode;
+		if(respCode == 200)
+		{
+			message = "ニーズ分析を始めました。数分後にこの画面を再読み込みすると、結果が入ります。";
+		}
+		else
+		{
+			info "[run_needs_analysis] ERROR: 応答=" + ifnull(resp.get("responseText"), "").toString();
+			message = "分析を始められませんでした（応答コード " + respCode + "）。管理者に連絡してください。";
+		}
+	}
+	info "===== run_needs_analysis END =====";
+	return message;
+}

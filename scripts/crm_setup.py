@@ -1,4 +1,6 @@
 """Zoho CRM に「商談記録」「用語辞書」モジュールと項目を API で作る（Cloud Shell で実行する想定）。
+plan / apply / show-fields の後ろに needs を付けると、ニーズ分析の「ニーズ分析」「自社技術」「ニーズ」を作る
+（docs/needs-analysis.md。使うクライアントの CRM だけで行う）。
 
 標準ライブラリだけで動く。既定は dry-run（何を作るかを表示するだけで、書き込まない）。
 
@@ -7,7 +9,7 @@
 - 既存のモジュール・項目は一切変更しない。無いものを POST で追加するだけ（PATCH / PUT / DELETE は使わない）
   例外（2026-10-02 ユーザー了承）：商談記録の「先方担当者（連絡先）」（連絡先の複数選択ルックアップ）を作ると、
   Zoho が中間モジュールを作り、連絡先（Contacts）に逆向きの項目と関連リストを足す。連絡先のデータは書き換えない
-- 作成してよいモジュールは SPEC に書いた2つだけ。同じ表示名の別モジュールがあれば中止
+- 作成してよいモジュールは SPEC に書いた2つ（needs を付けたときは NEEDS_SPEC の3つ）だけ。同じ表示名の別モジュールがあれば中止
 - 接続先の既定値は持たない。環境変数がそろっていなければエラーで止まる
 - 4xx はリトライしない。429 / 5xx は指数バックオフで最大3回。すべての通信を logs/ に JSON Lines で残す
 
@@ -17,6 +19,7 @@
     python3 scripts/crm_setup.py plan                         # 作るものを表示する（書き込みなし）
     python3 scripts/crm_setup.py apply                        # 実際に作る
     python3 scripts/crm_setup.py show-fields                  # 作った項目の実物の設定を表示する（書き込みなし）
+    python3 scripts/crm_setup.py plan needs                   # ニーズ分析のモジュールを表示する（apply needs で作る）
     python3 scripts/crm_setup.py check-access                 # バックエンドに要る権限（スコープ）がそろっているか試す（読み取りのみ）
     python3 scripts/crm_setup.py diagnose <商談記録の ID>     # 組織・ユーザーと、商談記録の読み取りを試した結果を出す（読み取りのみ）
 
@@ -179,6 +182,63 @@ SPEC: list[ModuleSpec] = [
         fields=[
             textarea("誤認識例", "Misrecognitions", "small"),
             picklist("種類", "Term_Type", ["社名", "製品名", "人名", "専門用語", "その他"]),
+        ],
+    ),
+]
+
+
+# ニーズ分析（docs/needs-analysis.md。API 名・選択肢は app/field_map.py の NeedsMap と一致させる）。
+# 「ニーズ」の「ニーズ分析」へのルックアップは新しいモジュール同士なので、既存のモジュールは変わらない
+NEEDS_SPEC: list[ModuleSpec] = [
+    ModuleSpec(
+        api_name="NeedsAnalyses",
+        label="ニーズ分析",
+        display_field_label="分析名",
+        fields=[
+            simple("期間（開始）", "Period_From", "date"),
+            simple("期間（終了）", "Period_To", "date"),
+            picklist("対象", "Targets", ["商談とWEB問合せ", "商談だけ", "WEB問合せだけ"]),
+            picklist("状態", "Analysis_Status", ["未実行", "実行中", "完了", "失敗"]),
+            text("件数", "Counts"),
+            textarea("上位のニーズ", "Top_Needs", "large"),
+            textarea("自社技術で応えられるニーズ", "Matched_Needs", "large"),
+            textarea("新商品開発の候補", "Product_Ideas", "large"),
+            textarea("エラー内容", "Error_Message", "small"),
+            simple("実行日時", "Analyzed_At", "datetime"),
+        ],
+    ),
+    ModuleSpec(
+        api_name="OwnTechnologies",
+        label="自社技術",
+        display_field_label="技術名",
+        fields=[
+            textarea("概要", "Summary", "large"),
+            textarea("強み・特長", "Strengths", "large"),
+            textarea("対応できる範囲", "Capabilities", "large"),
+            textarea("用途・実績", "Applications", "large"),
+            textarea("キーワード", "Keywords", "small"),
+            picklist("状態", "Tech_Status", ["提供中", "開発中", "社内のみ"]),
+        ],
+    ),
+    ModuleSpec(
+        api_name="CustomerNeeds",
+        label="ニーズ",
+        display_field_label="ニーズ",
+        fields=[
+            textarea("内容", "Detail", "large"),
+            picklist(
+                "種類",
+                "Need_Type",
+                ["機能・性能", "品質", "コスト", "納期", "使いやすさ", "サービス", "その他"],
+            ),
+            picklist("出典", "Source_Type", ["商談", "WEB問合せ"]),
+            simple("出典の記録", "Source_URL", "website"),
+            text("会社名", "Company_Name"),
+            textarea("根拠", "Evidence", "small"),
+            simple("日付", "Need_Date", "date"),
+            # 「<出典>:<記録 ID>:<番号>」。同じニーズを二重に作らない（重複不可は case_sensitive: false だけ受け付ける）
+            text("抽出キー", "Extract_Key", unique={"case_sensitive": False}),
+            lookup("ニーズ分析", "Analysis", "NeedsAnalyses", "ニーズ"),
         ],
     ),
 ]
@@ -674,6 +734,9 @@ def main(argv: list[str]) -> int:
                 raise SetupError("使い方: exchange-code <認可コード>")
             exchange_code(argv[2])
             return 0
+        if command in ("plan", "apply", "show-fields") and argv[2:] not in ([], ["needs"]):
+            raise SetupError(f"使い方: {command} [needs]")
+        spec = NEEDS_SPEC if argv[2:] == ["needs"] else SPEC
         log = Logger()
         api = Zoho(dc(), env("ZOHO_CLIENT_ID"), env("ZOHO_CLIENT_SECRET"), env("ZOHO_REFRESH_TOKEN"), log)
         if command == "diagnose":
@@ -700,7 +763,7 @@ def main(argv: list[str]) -> int:
         )
         print(f"接続先: {org.get('company_name')}（{org.get('domain_name')} / {org.get('id')}）\n")
         if command == "show-fields":
-            print("\n".join(field_details(api, SPEC)))
+            print("\n".join(field_details(api, spec)))
             return 0
         if command == "check-access":
             results = check_access(api)
@@ -708,7 +771,7 @@ def main(argv: list[str]) -> int:
             for ok, scope, label, code in results:
                 print(f"  {'OK' if ok else 'NG'}  {scope:<32} {label}{'' if ok else f'（{code}）'}")
             return 0 if all(ok for ok, *_ in results) else 1
-        plan = build_plan(api, SPEC)
+        plan = build_plan(api, spec)
         print(describe(plan))
         if command == "plan":
             print("\n（dry-run です。何も変更していません。作成するには apply を実行してください）")
@@ -720,14 +783,14 @@ def main(argv: list[str]) -> int:
             print("中止しました。何も変更していません。")
             return 1
         apply(api, plan)
-        problems = verify(api, SPEC)
+        problems = verify(api, spec)
         if problems:
             print("\n確認で見つかった問題:")
             print("\n".join(f"- {p}" for p in problems))
             return 1
         print("\n完了しました。すべての項目が API 名どおりに作成されています。")
         print("\n作成した項目の設定:")
-        print("\n".join(field_details(api, SPEC)))
+        print("\n".join(field_details(api, spec)))
         print(f"\n通信の記録: {log.path}")
         return 0
     except SetupError as e:

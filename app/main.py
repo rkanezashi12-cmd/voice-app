@@ -18,7 +18,7 @@ from app.errors import AppError, ConfigError, ExternalServiceError, PermanentErr
 from app.logs import log_event, set_trace, setup_logging
 from app.pipeline.process import ProcessRequest, run_process
 from app.pipeline.recall_flow import handle_recall_event
-from app.routers import app_api, app_auth, bots, desktop, internal, recordings, webhooks
+from app.routers import app_api, app_auth, bots, desktop, internal, needs, recordings, webhooks
 from app.runtime import Runtime
 from app.services.tasks import LocalTaskQueue
 
@@ -135,6 +135,7 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
     app.include_router(internal.router)
     app.include_router(app_auth.router)
     app.include_router(app_api.router)
+    app.include_router(needs.router)
     app.mount("/recorder", StaticFiles(directory=RECORDER_DIR, html=True), name="recorder")
     app.mount("/app", StaticFiles(directory=APP_DIR, html=True), name="app")
     return app

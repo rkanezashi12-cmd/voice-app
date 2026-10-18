@@ -1,7 +1,8 @@
 """Zoho CRM v8。
 
 お客様の本番 CRM に接続するため、次を守る。
-- 書き込み（作成・更新・upsert）はカスタムモジュール「商談記録」「用語辞書」だけ。
+- 書き込み（作成・更新・upsert）はカスタムモジュール「商談記録」「用語辞書」と、ニーズ分析の「ニーズ」「ニーズ分析」だけ
+  （ニーズ分析の2つは、そのモジュールを作ったクライアントでしか使わない。docs/needs-analysis.md）。
   それ以外（取引先・連絡先・商談などの標準モジュール）への書き込みは、送信前にエラーにする。
 - 削除の処理は持たない。
 - DRY_RUN のときは書き込みを送らず、どの項目を書く予定だったか（項目名だけ）をログに出す。
@@ -12,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -25,6 +27,18 @@ from app.services.zoho_auth import ZohoAuth
 logger = logging.getLogger(__name__)
 
 TEST_PREFIX = "【TEST】"
+# まとめて作るときの1回の件数（Zoho のレコード API は1回 100件まで）
+CREATE_BATCH = 100
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
 
 # 書き込みを絶対に許さない標準モジュール（field_map の設定ミスでも書き込まないための二重の守り）
 STANDARD_MODULES = frozenset(
@@ -82,7 +96,14 @@ class CrmService:
         self.dry_run = dry_run
         self._test_records = test_records
         self._retry_base_delay = retry_base_delay
-        self.writable_modules = frozenset({field_map.meeting_record.module, field_map.glossary.module})
+        self.writable_modules = frozenset(
+            {
+                field_map.meeting_record.module,
+                field_map.glossary.module,
+                field_map.needs.need.module,
+                field_map.needs.analysis.module,
+            }
+        )
         forbidden = {m for m in self.writable_modules if m.lower() in {s.lower() for s in STANDARD_MODULES}}
         if forbidden:
             raise CrmWriteForbidden(
@@ -191,6 +212,49 @@ class CrmService:
                 break
         return records
 
+    async def list_records_since(
+        self,
+        module: str,
+        fields: list[str],
+        since: datetime,
+        *,
+        per_page: int = 200,
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """作成日時が since 以降のレコードを、新しい順に読む（作成日時の降順で読み、since より古くなったら止める）。
+
+        (レコード, 上限で読み切れなかったか) を返す。上限は max_pages × per_page 件（page 方式は 2,000 件まで）。
+        """
+        records: list[dict[str, Any]] = []
+        wanted = sorted({*fields, "Created_Time"})
+        for page in range(1, max_pages + 1):
+            resp = await self._request(
+                "GET",
+                f"/{module}",
+                params={
+                    "fields": ",".join(wanted),
+                    "per_page": per_page,
+                    "page": page,
+                    "sort_by": "Created_Time",
+                    "sort_order": "desc",
+                },
+            )
+            if resp.status_code == 204:
+                return records, False
+            if resp.status_code >= 400:
+                raise error_from_response("zoho_crm", resp, "レコード一覧の取得に失敗しました")
+            body = self._json(resp)
+            for row in body.get("data", []):
+                if not isinstance(row, dict):
+                    continue
+                created = _parse_datetime(row.get("Created_Time"))
+                if created is not None and created < since:
+                    return records, False
+                records.append(row)
+            if not (body.get("info") or {}).get("more_records"):
+                return records, False
+        return records, True
+
     async def get_org(self) -> dict[str, Any]:
         """接続先の組織（org[0]。id / domain_name / company_name など）。"""
         resp = await self._request("GET", "/org")
@@ -236,7 +300,7 @@ class CrmService:
             raise error_from_response("zoho_crm", resp, "COQL の実行に失敗しました")
         return [r for r in self._json(resp).get("data", []) if isinstance(r, dict)]
 
-    # ---- 書き込み（商談記録・用語辞書のみ） ----
+    # ---- 書き込み（商談記録・用語辞書・ニーズ・ニーズ分析のみ） ----
 
     async def update_record(self, module: str, record_id: str, data: dict[str, Any]) -> None:
         self.check_writable(module)
@@ -258,6 +322,37 @@ class CrmService:
         record_id = str((item.get("details") or {}).get("id", ""))
         log_event(logger, "crm.created", module=module, record_id=record_id, fields=sorted(data))
         return record_id
+
+    async def create_records(self, module: str, rows: list[dict[str, Any]]) -> list[tuple[str | None, str]]:
+        """まとめて作る（1回 100件まで）。行ごとに (作成した ID か None, "created" / "duplicate" / エラーコード) を返す。
+
+        重複不可の項目が同じ行（DUPLICATE_DATA）は作らずに "duplicate" にする（ニーズの抽出キーで二重に作らないため）。
+        """
+        self.check_writable(module)
+        rows = [self._prefixed(r) for r in rows]
+        if self.dry_run:
+            for r in rows:
+                self._dry_run("crm.create", module, r)
+            return [(None, "dry-run") for _ in rows]
+        results: list[tuple[str | None, str]] = []
+        for i in range(0, len(rows), CREATE_BATCH):
+            batch = rows[i : i + CREATE_BATCH]
+            resp = await self._request("POST", f"/{module}", json={"data": batch, "trigger": []})
+            body = self._json(resp)
+            items = body.get("data") if isinstance(body.get("data"), list) else None
+            if items is None or len(items) != len(batch):
+                raise error_from_response("zoho_crm", resp, "レコードのまとめての作成に失敗しました")
+            for item in items:
+                item = item if isinstance(item, dict) else {}
+                if str(item.get("status", "")).lower() == "success":
+                    results.append((str((item.get("details") or {}).get("id", "")) or None, "created"))
+                elif item.get("code") == "DUPLICATE_DATA":
+                    results.append((None, "duplicate"))
+                else:
+                    results.append((None, str(item.get("code") or "error")))
+        created = sum(1 for _, r in results if r == "created")
+        log_event(logger, "crm.created_many", module=module, rows=len(rows), created=created)
+        return results
 
     async def upsert_record(
         self, module: str, data: dict[str, Any], duplicate_check_fields: list[str]

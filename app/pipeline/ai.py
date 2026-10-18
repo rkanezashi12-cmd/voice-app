@@ -57,6 +57,22 @@ class PromptStore:
     def _schema(self) -> dict[str, Any]:
         return json.loads(self._read("schema.json"))
 
+    @cached_property
+    def needs_extract(self) -> str:
+        return self._read("needs_extract.md")
+
+    @cached_property
+    def needs_extract_schema(self) -> dict[str, Any]:
+        return json.loads(self._read("needs_extract_schema.json"))
+
+    @cached_property
+    def needs_analyze(self) -> str:
+        return self._read("needs_analyze.md")
+
+    @cached_property
+    def needs_analyze_schema(self) -> dict[str, Any]:
+        return json.loads(self._read("needs_analyze_schema.json"))
+
     def schema(self, category_choices: tuple[str, ...] = ()) -> dict[str, Any]:
         schema = copy.deepcopy(self._schema)
         if category_choices:

@@ -71,6 +71,8 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
    作るのは商談記録・用語辞書・関数・ワークフロー・変数・ウィジェットと上の例外だけで、既存のモジュール（Nippou・NippouLink・Inquiry・
    Repair・TEST など）・項目・レイアウト・ワークフロー・データは変えない。デモ用のデータ（取引先など）も作らない。
    新しいクライアントで書き込める範囲を広げるときは、そのクライアントごとにユーザーに確認してここに書く。
+   `monodemo` は 2026-10-18 にニーズ分析（docs/needs-analysis.md）の新しいモジュール「ニーズ」「ニーズ分析」への書き込みを了承済み
+   （「自社技術」は人が入力し、バックエンドは読むだけ。既存の「問合せ内容」も読むだけ）。1回の分析で「ニーズ」を複数件作るのはルール3の例外
 7. **バックエンドが作るテスト用レコードは名前の先頭に【TEST】を付ける**（`CRM_TEST_RECORDS=true` が既定）。
    本番運用では `scripts/go_live.sh` で `false` にする（ユーザーが時期を決める。テストの記録は CRM の画面で消す。docs/go-live.md）。
    `default` 以外のクライアントは、クライアントの `crm_test_records` で切り替える（`scripts/client_mode.sh --live` / `--test`。`go_live.sh` は効かない）。
@@ -113,6 +115,10 @@ ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ, ZohoCRM.org.READ
 | C デスクトップ | アプリ → `POST /api/desktop/upload-token` | Recall.ai（話者名つき） | Recall の録音削除 |
 | D モバイル SDK | 未提供。`app/pipeline/sources.py` にソースを1つ足す | — | — |
 
+ニーズ分析（monodemo だけ。クライアントの `features.needs_analysis`）：CRM のボタン → `POST /api/needs/analyze` → Cloud Tasks →
+`POST /internal/needs-analyze`。商談記録・問合せからニーズを抜き出して「ニーズ」に作り、自社技術と照らした結果を「ニーズ分析」に書く
+（`app/needs/`。docs/needs-analysis.md）。共通処理には合流しない
+
 Webhook（`POST /webhooks/recall`）は署名検証 → `metadata.client_id` でクライアントを決める → Cloud Tasks に積んで即 200。
 共通処理は `POST /internal/process`（Cloud Tasks から OIDC 認証で呼ぶ）。
 
@@ -126,10 +132,11 @@ app/main.py            FastAPI アプリ
 app/config.py          環境変数（pydantic-settings）
 app/clients.py         クライアント（テナント）単位の設定と秘密情報の解決（dry_run・crm_test_records の上書きも）
 app/field_map.py       CRM の API 名・選択肢の値（実物に合わせてここだけ直す）
-app/routers/           bots / desktop / recordings / webhooks / internal / app_auth・app_api（録音アプリ）
+app/routers/           bots / desktop / recordings / webhooks / internal / app_auth・app_api（録音アプリ）/ needs（ニーズ分析）
 app/services/          zoho_auth / crm / recall / gemini / tasks / storage / audio / zoho_login / geocoding
 app/visits.py          録音アプリの訪問先の検索と商談記録の作成（app/web_session.py はログインの Cookie）
 app/pipeline/          共通処理（入口非依存）
+app/needs/             ニーズ分析（monodemo。docs/needs-analysis.md）
 web/recorder/          対面録音ページ（素の HTML/JS。ビルド不要）
 web/app/               録音アプリ（Zoho でログイン・訪問先と担当者の選択・GPS の候補・日報。素の HTML/JS）
 prompts/               transcribe.md / correct.md / summarize.md / schema.json
