@@ -163,6 +163,7 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 | まとめての作成（`POST /crm/v8/{module}`、100件まで） | 行ごとに `status: success` / `error`。一部だけ失敗すると HTTP 207（スキルに記載）。重複不可の項目が同じ行は `code: DUPLICATE_DATA`（未確認。違うコードなら件数のログに出るだけで、二重には作られない） | `app/services/crm.py` の `create_records` |
 | 記録を開く URL | `https://crm.zoho.<com など>/crm/<domain_name>/tab/<module_name（CustomModule3 など）>/<記録 ID>`（一覧の URL `…/tab/CustomModule3/custom-view/…/list` から推した形。開けなければ組み立てを直すだけ） | `app/needs/analysis.py` の `_record_links` |
 | ボタン用の関数の形 | `string button.<関数名>(String rec_id)`。返した文字列が画面にメッセージで出る（未確認。出なければ実行ログの `info` で確かめる） | `crm/run_needs_analysis.dg` |
+| ウィジェットの COQL（`ZOHO.CRM.API.coql`） | `Need_Date >= '…' and Need_Date <= '…'`（日付の比較）・選択肢の表示値での `=`・`order by … desc`・`limit 200 offset N` が通る。応答は `{data, info.more_records}`、0件は空（REST の 204）。未確認（実機で一覧が出なければここを疑う） | `widgets/needs-analysis/app/analysis.js` の `needsQuery`、`main.js` の `loadNeeds` |
 | ルックアップ（新しいモジュール同士）の作成 | 「ニーズ」→「ニーズ分析」のルックアップを `crm_setup.py` で作る（商談記録 → 取引先と同じ形。関連リストの名前は「ニーズ」） | `scripts/crm_setup.py` の `NEEDS_SPEC` |
 
 ## 優先度：中（動くが挙動が変わる）

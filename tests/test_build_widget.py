@@ -69,3 +69,34 @@ def test_main_builds_with_a_local_sdk(tmp_path: Path, capsys: pytest.CaptureFixt
     out = capsys.readouterr().out
     assert "docs/widget.md" in out
     assert "/index.html" in out, "インデックスページ（app/ からの相対）を案内する"
+
+
+def test_needs_widget_config_uses_the_field_map_names() -> None:
+    config = bw.needs_widget_config()
+    n = DEFAULT_FIELD_MAP.needs
+    assert config["analysis_module"] == n.analysis.module
+    assert config["need_module"] == n.need.module
+    assert config["meeting_module"] == DEFAULT_FIELD_MAP.meeting_record.module
+    assert config["inquiry_module"] == n.inquiry.module
+    assert config["analysis_fields"] == {k: getattr(n.analysis, k) for k in bw.NEEDS_ANALYSIS_FIELDS}
+    assert config["need_fields"] == {k: getattr(n.need, k) for k in bw.NEED_FIELDS}
+    values = {k: getattr(n.values, k) for k in bw.NEEDS_VALUES}
+    values["need_types"] = list(values["need_types"])
+    assert config["values"] == values
+
+
+def test_needs_widget_zip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    sdk = tmp_path / "sdk.js"
+    sdk.write_bytes(FAKE_SDK)
+    out = tmp_path / "n.zip"
+    assert bw.main(["--widget", "needs-analysis", "--sdk", str(sdk), "--output", str(out)]) == 0
+    assert "docs/needs-analysis.md" in capsys.readouterr().out
+    with zipfile.ZipFile(out) as z:
+        names = z.namelist()
+        assert names[0] == "plugin-manifest.json" and z.getinfo("app/").is_dir()
+        html = z.read("app/index.html").decode()
+        for script in ["ZohoEmbededAppSDK.min.js", "field-map.js", "analysis.js", "main.js"]:
+            assert f'src="{script}"' in html and f"app/{script}" in names
+        js = z.read("app/field-map.js").decode()
+        config = json.loads(js.split("window.NEEDS_ANALYSIS_CONFIG = ", 1)[1].rstrip().rstrip(";"))
+        assert config == bw.needs_widget_config()

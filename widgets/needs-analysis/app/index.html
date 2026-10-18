@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ニーズ分析の結果</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="root">
+      <p id="message" class="message" hidden></p>
+
+      <section id="report" hidden>
+        <header class="head">
+          <div class="title-row">
+            <h1 id="r-name"></h1>
+            <span id="r-state" class="badge"></span>
+            <button id="btn-reload" class="ghost" type="button">再読み込み</button>
+          </div>
+          <dl class="meta">
+            <div><dt>期間</dt><dd id="r-period"></dd></div>
+            <div><dt>対象</dt><dd id="r-targets"></dd></div>
+            <div><dt>実行日時</dt><dd id="r-analyzed"></dd></div>
+          </dl>
+        </header>
+
+        <p id="r-notice" class="notice" hidden></p>
+
+        <section class="kpis" aria-label="件数">
+          <div class="kpi"><span class="kpi-label">商談</span><span id="k-meetings" class="kpi-value"></span></div>
+          <div class="kpi"><span class="kpi-label">WEB問合せ</span><span id="k-inquiries" class="kpi-value"></span></div>
+          <div class="kpi"><span class="kpi-label">ニーズ</span><span id="k-needs" class="kpi-value"></span></div>
+          <div class="kpi"><span class="kpi-label">会社</span><span id="k-companies" class="kpi-value"></span></div>
+        </section>
+
+        <section class="panel">
+          <h2>上位のニーズ <span class="sub">似たニーズのまとまり。件数・社数の多い順（押すと説明）</span></h2>
+          <ol id="c-themes" class="themes"></ol>
+          <p id="c-themes-empty" class="muted" hidden>まとまりはありません。</p>
+        </section>
+
+        <div class="grid">
+          <section class="panel">
+            <h2>ニーズの種類 <span class="sub">押すと一覧を絞り込む</span></h2>
+            <div id="c-types" class="bars"></div>
+          </section>
+          <section class="panel">
+            <h2>出典 <span class="sub">押すと一覧を絞り込む</span></h2>
+            <div id="c-sources" class="stack-wrap"></div>
+          </section>
+          <section class="panel wide">
+            <h2>ニーズの多い会社 <span class="sub">上位10社。押すと一覧を絞り込む</span></h2>
+            <div id="c-companies" class="bars"></div>
+          </section>
+        </div>
+
+        <div class="grid">
+          <section class="panel">
+            <h2>自社技術で応えられるニーズ</h2>
+            <div id="r-matched" class="cards"></div>
+          </section>
+          <section class="panel">
+            <h2>新商品開発の候補</h2>
+            <div id="r-ideas" class="cards"></div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="list-head">
+            <h2>ニーズ一覧 <span id="l-count" class="sub" aria-live="polite"></span></h2>
+            <div class="filters">
+              <select id="f-type" aria-label="種類で絞り込む"><option value="">すべての種類</option></select>
+              <select id="f-source" aria-label="出典で絞り込む"><option value="">すべての出典</option></select>
+              <select id="f-company" aria-label="会社で絞り込む"><option value="">すべての会社</option></select>
+              <input id="f-q" type="search" placeholder="言葉で検索" aria-label="ニーズを言葉で検索" />
+              <button id="f-clear" class="ghost" type="button">絞り込みを外す</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>日付</th><th>ニーズ</th><th>種類</th><th>出典</th><th>会社名</th><th>元の記録</th></tr>
+              </thead>
+              <tbody id="l-body"></tbody>
+            </table>
+          </div>
+          <p id="l-empty" class="muted" hidden>当てはまるニーズはありません。</p>
+          <p id="l-truncated" class="muted" hidden>ニーズが多いため、新しい 2,000 件までを出しています。</p>
+        </section>
+      </section>
+
+      <div id="tip" class="tip" role="tooltip" hidden></div>
+    </main>
+
+    <!-- SDK と項目の API 名（field-map.js）は scripts/build_widget.py が ZIP に入れる -->
+    <script src="ZohoEmbededAppSDK.min.js"></script>
+    <script src="field-map.js"></script>
+    <script src="analysis.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>
