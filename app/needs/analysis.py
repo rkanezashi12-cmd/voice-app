@@ -511,12 +511,24 @@ class NeedsAnalysisRun:
         """Gemini の結果を、件数・社数を数えてから読みやすい文にする（件数は Gemini に数えさせない）。"""
         a = self.fm.needs.analysis
         themes: dict[str, list[Need]] = {}
-        lines: list[str] = []
-        for i, theme in enumerate(data["themes"], start=1):
+        ranked: list[tuple[dict[str, Any], list[Need], set[str]]] = []
+        for theme in data["themes"]:
             members = [by_id[x] for x in dict.fromkeys(map(str, theme.get("need_ids") or [])) if x in by_id]
             themes[str(theme["theme"])] = members
-            companies = sorted({m.company for m in members if m.company})
-            examples = "、".join(f"{m.company or '会社不明'}「{m.title}」" for m in members[:3])
+            ranked.append((theme, members, {m.company for m in members if m.company}))
+        # 件数・社数の多い順（Gemini が返した順は当てにしない。同じなら返した順）
+        ranked.sort(key=lambda r: (len(r[1]), len(r[2])), reverse=True)
+        lines: list[str] = []
+        for i, (theme, members, companies) in enumerate(ranked, start=1):
+            # 例は、なるべく別の会社のものから3つ（会社ごとの最初の1件を先に、残りを後に）
+            seen: set[str] = set()
+            first: list[Need] = []
+            rest: list[Need] = []
+            for m in members:
+                (rest if m.company in seen else first).append(m)
+                seen.add(m.company)
+            picked = first + rest
+            examples = "、".join(f"{m.company or '会社不明'}「{m.title}」" for m in picked[:3])
             lines.append(
                 f"{i}. {theme['theme']}（{len(members)}件・{len(companies)}社）\n{theme['description']}"
                 + (f"\n例：{examples}" if examples else "")
