@@ -707,10 +707,23 @@ def test_client_mode_changes_only_that_client(recall_sim: Path, arg: str, key: s
     assert mono[key] is value
 
 
+def test_client_mode_turns_needs_analysis_on_and_off(recall_sim: Path) -> None:
+    res = _run_script(
+        recall_sim, "client_mode.sh", ["yes"], _two_clients(), proc_env=MONO_ENV, args=("--needs-on",)
+    )
+    assert res.returncode == 0, res.stderr
+    mono = _assert_marusan_untouched(recall_sim)
+    assert mono["features"] == {"needs_analysis": True}
+    res = _run_script(
+        recall_sim, "client_mode.sh", [], _two_clients(), proc_env=MONO_ENV, args=("--needs-off",)
+    )
+    assert res.returncode == 0 and "何も変えていません" in res.stdout, "もともと使っていない"
+
+
 def test_client_mode_shows_state_and_refuses_default(recall_sim: Path) -> None:
     res = _run_script(recall_sim, "client_mode.sh", [], _two_clients(), proc_env=MONO_ENV)
     assert res.returncode == 0, res.stderr
-    assert "CRM に書き込まない（dry_run）・【TEST】を付ける" in res.stdout
+    assert "CRM に書き込まない（dry_run）・【TEST】を付ける・ニーズ分析を使わない" in res.stdout
     assert _env_updates(recall_sim) == []
     res = _run_script(
         recall_sim,

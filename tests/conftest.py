@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +121,10 @@ class FakeCrm:
         self.fail_writes: AppError | None = None
         # 作成を断る条件（送る中身を見て、断るときはエラーを返す）
         self.reject_create: Callable[[dict[str, Any]], AppError | None] | None = None
-        self.writable_modules = frozenset({fm.meeting_record.module, fm.glossary.module})
+        self.writable_modules = frozenset(
+            {fm.meeting_record.module, fm.glossary.module, fm.needs.need.module, fm.needs.analysis.module}
+        )
+        self.org = {"id": ORG_ID, "domain_name": "demo2", "company_name": "テスト"}
         # 設定の読み取り（モジュール・項目）と CRM のユーザー
         self.modules: list[dict[str, Any]] = []
         self.settings_fields: dict[str, list[dict[str, Any]]] = {}
@@ -146,6 +151,21 @@ class FakeCrm:
 
     async def list_records(self, module: str, fields: list[str], **_: Any) -> list[dict[str, Any]]:
         return [dict(r) for r in self.records.get(module, {}).values()]
+
+    async def list_records_since(
+        self, module: str, fields: list[str], since: datetime, **_: Any
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """作成日時（Created_Time。無ければ 2026-10-01）が since 以降のレコードを新しい順に返す。"""
+        rows = []
+        for r in self.records.get(module, {}).values():
+            created = datetime.fromisoformat(r.get("Created_Time") or "2026-10-01T00:00:00+09:00")
+            if created >= since:
+                rows.append({"Created_Time": created.isoformat(), **dict(r)})
+        rows.sort(key=lambda r: r["Created_Time"], reverse=True)
+        return rows, False
+
+    async def get_org(self) -> dict[str, Any]:
+        return dict(self.org)
 
     async def list_modules(self) -> list[dict[str, Any]]:
         self.settings_reads.append("modules")
@@ -187,6 +207,20 @@ class FakeCrm:
         self.writes.append(("create", module, record_id, dict(data)))
         self.add(module, record_id, data)
         return record_id
+
+    async def create_records(self, module: str, rows: list[dict[str, Any]]) -> list[tuple[str | None, str]]:
+        """まとめて作る。ニーズの抽出キーが同じ行は作らない（本物の重複不可の項目と同じ）。"""
+        self.check_writable(module)
+        key = self.fm.needs.need.extract_key
+        results: list[tuple[str | None, str]] = []
+        for row in rows:
+            if row.get(key) and any(
+                r.get(key) == row.get(key) for r in self.records.get(module, {}).values()
+            ):
+                results.append((None, "duplicate"))
+                continue
+            results.append((await self.create_record(module, row), "created"))
+        return results
 
     async def upsert_record(
         self, module: str, data: dict[str, Any], duplicate_check_fields: list[str]
@@ -314,6 +348,9 @@ class FakeLlm:
         self.summary_output = summary_json()
         self.replace: dict[str, str] = {}
         self.fail: AppError | None = None
+        # ニーズ分析：抜き出しは元ごとに1件（needs_per_source で上書き）、分析は全ニーズを1つのテーマにまとめる
+        self.needs_per_source: dict[str, list[dict[str, str]]] = {}
+        self.analyze_output: str | None = None
 
     async def generate(
         self,
@@ -335,6 +372,25 @@ class FakeLlm:
             for a, b in self.replace.items():
                 text = text.replace(a, b)
             return LlmResult(text)
+        if task == "needs_extract":
+            keys = re.findall(r"^# 元: (\S+)$", parts[0].text, re.M)
+            default = [{"title": "見出し", "detail": "内容", "type": "品質", "evidence": "根拠"}]
+            results = [{"source": k, "needs": self.needs_per_source.get(k, default)} for k in keys]
+            return LlmResult(json.dumps({"results": results}, ensure_ascii=False))
+        if task == "needs_analyze":
+            if self.analyze_output is not None:
+                return LlmResult(self.analyze_output)
+            ids = re.findall(r"^ID: (\S+) \|", parts[0].text, re.M)
+            out = {
+                "themes": [{"theme": "計量の精度", "description": "説明", "need_ids": ids}],
+                "matched": [
+                    {"theme": "計量の精度", "technology": "高精度計量", "reason": "理由", "proposal": "提案"}
+                ],
+                "product_ideas": [
+                    {"theme": "計量の精度", "idea": "方向性", "reason": "理由", "base_technology": None}
+                ],
+            }
+            return LlmResult(json.dumps(out, ensure_ascii=False))
         return LlmResult(self.summary_output)
 
 

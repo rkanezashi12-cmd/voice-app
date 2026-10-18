@@ -117,6 +117,13 @@ class AppConfig(_Model):
         return _check_ref(value)
 
 
+class FeatureFlags(_Model):
+    """クライアントごとに使う機能（既定はどれも使わない）。"""
+
+    # ニーズ分析（docs/needs-analysis.md）。CRM に「ニーズ」「ニーズ分析」「自社技術」を作ったクライアントだけ true
+    needs_analysis: bool = False
+
+
 class ClientConfig(_Model):
     client_id: str
     display_name: str = ""
@@ -132,6 +139,7 @@ class ClientConfig(_Model):
     zoho: ZohoConfig | None = None
     recall: RecallConfig | None = None
     app: AppConfig | None = None
+    features: FeatureFlags = FeatureFlags()
     field_map_overrides: dict[str, Any] = Field(default_factory=dict, alias="field_map")
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)

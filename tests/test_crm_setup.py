@@ -335,3 +335,40 @@ def test_diagnose_shows_each_probe_without_record_contents() -> None:
     assert "秘密の商談名" not in text
     with pytest.raises(cs.SetupError):
         cs.diagnose(DiagApi(), "1 or 1=1")
+
+
+def test_needs_plan_creates_three_modules_in_order_and_is_idempotent() -> None:
+    api = FakeApi(list(STANDARD), {})
+    plan = cs.build_plan(api, cs.NEEDS_SPEC)
+    names = [m.api_name for m in plan.create_modules]
+    assert sorted(names) == ["CustomerNeeds", "NeedsAnalyses", "OwnTechnologies"]
+    assert names.index("NeedsAnalyses") < names.index("CustomerNeeds"), "ルックアップ先を先に作る"
+    cs.apply(api, plan)
+    assert cs.verify(api, cs.NEEDS_SPEC) == []
+    assert cs.build_plan(api, cs.NEEDS_SPEC).empty
+    assert "MeetingRecords" not in api.modules[-1]["api_name"]
+    assert not any(c[0] != "GET" and "MeetingRecords" in str(c[2]) for c in api.calls), "商談記録には触れない"
+
+
+def test_needs_spec_matches_field_map() -> None:
+    n = DEFAULT_FIELD_MAP.needs
+    specs = {m.api_name: {f["api_name"]: f for f in m.fields} for m in cs.NEEDS_SPEC}
+    for fields in (n.need, n.analysis, n.own_technology):
+        for key, api in fields.model_dump().items():
+            if key != "module" and api != "Name":
+                assert api in specs[fields.module], f"{fields.module}.{api}"
+    choices = [v["display_value"] for v in specs[n.need.module][n.need.need_type]["pick_list_values"]]
+    assert tuple(choices) == n.values.need_types
+    targets = [v["display_value"] for v in specs[n.analysis.module][n.analysis.targets]["pick_list_values"]]
+    assert targets == [n.values.target_both, n.values.target_meetings, n.values.target_inquiries]
+    assert specs[n.need.module][n.need.extract_key]["unique"] == {"case_sensitive": False}
+    assert n.inquiry.module not in specs, "問合せ内容（既存）は作らない"
+
+
+@pytest.mark.parametrize("args", [["plan", "x"], ["apply", "needs", "x"]])
+def test_needs_argument_is_checked(args: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cs, "Zoho", lambda *a, **k: (_ for _ in ()).throw(AssertionError("接続しない")))
+    monkeypatch.setattr(cs, "Logger", lambda: None)
+    monkeypatch.setattr(cs, "env", lambda name: "x")
+    monkeypatch.setattr(cs, "dc", lambda: "us")
+    assert cs.main(["crm_setup.py", *args]) == 1

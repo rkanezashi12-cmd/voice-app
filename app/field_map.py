@@ -127,6 +127,85 @@ class TextLimits(_Frozen):
     transcript: int = 32000
 
 
+class InquiryFields(_Frozen):
+    """既存のモジュール「問合せ内容」（WEB の問合せ。monodemo のデモ2）。ニーズ分析で読むだけ。"""
+
+    module: str = "Inquiry"
+    request: str = "Request"  # 問合せ内容（本文）
+    item: str = "Inquiry_item"  # 問合せ項目（見積依頼・技術相談など）
+    company: str = "Company"
+
+
+class OwnTechnologyFields(_Frozen):
+    """カスタムモジュール「自社技術」。人が入力し、バックエンドは読むだけ（docs/needs-analysis.md）。"""
+
+    module: str = "OwnTechnologies"
+    name: str = "Name"
+    summary: str = "Summary"
+    strengths: str = "Strengths"
+    capabilities: str = "Capabilities"
+    applications: str = "Applications"
+    keywords: str = "Keywords"
+    status: str = "Tech_Status"
+
+
+class CustomerNeedFields(_Frozen):
+    """カスタムモジュール「ニーズ」。ニーズ分析で1件ずつ作る。"""
+
+    module: str = "CustomerNeeds"
+    name: str = "Name"  # 短い見出し
+    detail: str = "Detail"
+    need_type: str = "Need_Type"
+    source_type: str = "Source_Type"
+    source_url: str = "Source_URL"
+    company: str = "Company_Name"
+    evidence: str = "Evidence"
+    need_date: str = "Need_Date"
+    extract_key: str = "Extract_Key"  # 重複不可。「<出典>:<記録 ID>:<番号>」
+    analysis: str = "Analysis"  # ニーズ分析へのルックアップ
+
+
+class NeedsAnalysisFields(_Frozen):
+    """カスタムモジュール「ニーズ分析」。人が作ってボタンを押し、結果をバックエンドが書く。"""
+
+    module: str = "NeedsAnalyses"
+    name: str = "Name"
+    period_from: str = "Period_From"
+    period_to: str = "Period_To"
+    targets: str = "Targets"
+    status: str = "Analysis_Status"
+    counts: str = "Counts"
+    top_needs: str = "Top_Needs"
+    matched_needs: str = "Matched_Needs"
+    product_ideas: str = "Product_Ideas"
+    error_message: str = "Error_Message"
+    analyzed_at: str = "Analyzed_At"
+
+
+class NeedsValues(_Frozen):
+    """ニーズ分析の選択肢の表示値（scripts/crm_setup.py の NEEDS_SPEC と合わせる）。"""
+
+    need_types: tuple[str, ...] = ("機能・性能", "品質", "コスト", "納期", "使いやすさ", "サービス", "その他")
+    need_type_other: str = "その他"
+    source_meeting: str = "商談"
+    source_inquiry: str = "WEB問合せ"
+    target_both: str = "商談とWEB問合せ"
+    target_meetings: str = "商談だけ"
+    target_inquiries: str = "WEB問合せだけ"
+    status_idle: str = "未実行"
+    status_running: str = "実行中"
+    status_done: str = "完了"
+    status_failed: str = "失敗"
+
+
+class NeedsMap(_Frozen):
+    inquiry: InquiryFields = InquiryFields()
+    own_technology: OwnTechnologyFields = OwnTechnologyFields()
+    need: CustomerNeedFields = CustomerNeedFields()
+    analysis: NeedsAnalysisFields = NeedsAnalysisFields()
+    values: NeedsValues = NeedsValues()
+
+
 class FieldMap(_Frozen):
     meeting_record: MeetingRecordFields = MeetingRecordFields()
     glossary: GlossaryFields = GlossaryFields()
@@ -135,6 +214,8 @@ class FieldMap(_Frozen):
     meeting_type: MeetingTypeValues = MeetingTypeValues()
     capture_method: CaptureMethodValues = CaptureMethodValues()
     limits: TextLimits = TextLimits()
+    # ニーズ分析（docs/needs-analysis.md。クライアントの features.needs_analysis が true のときだけ使う）
+    needs: NeedsMap = NeedsMap()
     # category の選択肢。空なら自由記述（Gemini の出力をそのまま入れる）。
     # 値を入れると Gemini の出力をこの中に限定し、外れた値は null にする。
     category_choices: tuple[str, ...] = ()

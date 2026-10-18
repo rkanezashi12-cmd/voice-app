@@ -7,8 +7,11 @@
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --dry-run    # CRM に書き込まない（dry_run=true）に戻す
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --live       # 【TEST】を付けない（本番運用。docs/go-live.md）
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --test       # 【TEST】を付ける
+#   APP_CLIENT=monodemo bash scripts/client_mode.sh --needs-on   # ニーズ分析を使えるようにする（docs/needs-analysis.md）
+#   APP_CLIENT=monodemo bash scripts/client_mode.sh --needs-off  # ニーズ分析を使えなくする
 #
-# 変えるのは Cloud Run の CLIENTS_CONFIG_JSON のそのクライアントの dry_run / crm_test_records だけ。CRM には書き込まない。
+# 変えるのは Cloud Run の CLIENTS_CONFIG_JSON のそのクライアントの dry_run / crm_test_records / features.needs_analysis だけ。
+# CRM には書き込まない。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Ctrl+Z（一時停止）を効かなくする。「元に戻す」のつもりで押すと、スクリプトが止まったままになって分かりにくいため
@@ -34,7 +37,7 @@ yes_no() {
   done
 }
 
-USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test]"
+USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test | --needs-on | --needs-off]"
 [ -n "$APP_CLIENT" ] || fail "$USAGE"
 [ "$APP_CLIENT" != default ] ||
   fail "default（マルサン木型）はサービス全体の設定のままにします（このスクリプトでは変えません。本番運用は scripts/go_live.sh）"
@@ -48,6 +51,8 @@ case "${1:-}" in
   --dry-run) KEY=dry_run VALUE=true LABEL="CRM に書き込まない（dry_run=true）" ;;
   --live) KEY=crm_test_records VALUE=false LABEL="商談記録の名前に【TEST】を付けない（本番運用）" ;;
   --test) KEY=crm_test_records VALUE=true LABEL="商談記録の名前の先頭に【TEST】を付ける" ;;
+  --needs-on) KEY=features.needs_analysis VALUE=true LABEL="ニーズ分析を使う" ;;
+  --needs-off) KEY=features.needs_analysis VALUE=false LABEL="ニーズ分析を使わない" ;;
   *) fail "$USAGE" ;;
 esac
 
@@ -79,13 +84,24 @@ def describe(c: dict) -> str:
     test = c.get("crm_test_records")
     dry = service_bool("DRY_RUN") if dry is None else dry
     test = service_bool("CRM_TEST_RECORDS") if test is None else test
-    return f"CRM に{'書き込まない（dry_run）' if dry else '書き込む'}・【TEST】を{'付ける' if test else '付けない'}"
+    needs = bool((c.get("features") or {}).get("needs_analysis"))
+    return (
+        f"CRM に{'書き込まない（dry_run）' if dry else '書き込む'}・【TEST】を{'付ける' if test else '付けない'}"
+        f"・ニーズ分析を{'使う' if needs else '使わない'}"
+    )
 
 
 before = describe(client)
-changed = bool(key) and client.get(key) is not (value == "true")
-if key:
-    client[key] = value == "true"
+target, name, current = client, key, client.get(key)
+if "." in key:
+    # features.needs_analysis のような入れ子の設定（無ければ false）
+    head, name = key.split(".", 1)
+    current = bool((client.get(head) or {}).get(name))
+changed = bool(key) and current is not (value == "true")
+if changed:
+    if "." in key:
+        target = client.setdefault(head, {})
+    target[name] = value == "true"
 print(json.dumps(clients, separators=(",", ":")))
 print(before)
 print(describe(client))

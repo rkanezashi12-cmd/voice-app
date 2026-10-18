@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {"type": "string"},
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {"type": "string"},
+                "detail": {"type": "string"},
+                "type": {"type": "string"},
+                "evidence": {"type": "string"}
+              },
+              "required": ["title", "detail", "type", "evidence"]
+            }
+          }
+        },
+        "required": ["source", "needs"]
+      }
+    }
+  },
+  "required": ["results"]
+}

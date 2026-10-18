@@ -1,0 +1,44 @@
+{
+  "type": "object",
+  "properties": {
+    "themes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "theme": {"type": "string"},
+          "description": {"type": "string"},
+          "need_ids": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["theme", "description", "need_ids"]
+      }
+    },
+    "matched": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "theme": {"type": "string"},
+          "technology": {"type": "string"},
+          "reason": {"type": "string"},
+          "proposal": {"type": "string"}
+        },
+        "required": ["theme", "technology", "reason", "proposal"]
+      }
+    },
+    "product_ideas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "theme": {"type": "string"},
+          "idea": {"type": "string"},
+          "reason": {"type": "string"},
+          "base_technology": {"type": ["string", "null"]}
+        },
+        "required": ["theme", "idea", "reason", "base_technology"]
+      }
+    }
+  },
+  "required": ["themes", "matched", "product_ideas"]
+}
