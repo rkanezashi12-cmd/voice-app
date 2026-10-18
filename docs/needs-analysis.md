@@ -110,12 +110,19 @@
 
 ### 1. コードを入れる（Cloud Shell、5分）
 
-PR をマージすると GitHub Actions がデプロイする。`features.needs_analysis` が false のクライアント（マルサン木型）では、
-ボタンの API が 404 を返すだけで、何も動かない。
+PR をマージしたあと、Cloud Shell で `scripts/deploy.sh` を実行してデプロイする（GitHub Actions はテストだけで、デプロイしない）。
+`features.needs_analysis` が false のクライアント（マルサン木型）では、ボタンの API が 404 を返すだけで、何も動かない。
 
 ```bash
-cd ~/voice-app && git pull && bash scripts/marusan_snapshot.sh save
+cd ~/voice-app && git checkout claude/meeting-transcription-app-setup-nkaz1m && git pull && bash scripts/marusan_snapshot.sh save
 ```
+
+```bash
+bash scripts/deploy.sh
+```
+
+**デプロイより先に手順3（`--needs-on`）を実行しないこと。** 古いコードは `features` を知らないので、新しい版が起動に失敗する
+（2026-10-18 に実際に起きた。失敗した版には通信が回らないので、前の版が動き続ける。デプロイすれば直る）
 
 ### 2. モジュールを作る（Cloud Shell、10分）
 
