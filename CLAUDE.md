@@ -42,6 +42,8 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 - AI は **Vertex AI の Gemini、リージョナルエンドポイント asia-northeast1**。global エンドポイントは使わない
 - 文字起こし全文は **CRM の「商談記録」** の `transcript` / `transcript_2`（各 32,000 文字）に保存する。
   64,000 文字を超えた分は末尾を切り「（以降省略：全体○○文字）」と明記、ログに警告を出す。WorkDrive は使わない
+  - クライアントの `features.transcript_attachment` が true なら、全文を `.txt` で商談記録に**添付ファイル**としても付ける
+    （2026-10-19 ユーザーの判断。データは CRM のまま。GCP には置かない。手順は docs/zoho-connection.md の「全文の添付ファイル」）
 - **GCP に DB を持たない。** 処理状態は CRM のレコードで管理する
 - **録画・音声は残さない。** 文字起こし後に削除（Recall.ai は API で削除、GCS はライフサイクル1日も併用）
 - 秘密情報は Secret Manager。リポジトリに含めない
@@ -53,6 +55,7 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
    `docs/unverified-apis.md` に必ず記録する。
 2. **CRM の API 名をコードに直書きしない。** すべて `app/field_map.py` を経由する。
 3. **1件の処理で CRM への更新は原則1回。** 途中経過の書き込みは `field_map.BOT_EVENT_STATUS` などで決めたものだけ。
+   全文の添付ファイル（上の features.transcript_attachment）は、日報を書いたあとの追加の1回。添付に失敗しても処理は「完了」のまま
 4. **ログに文字起こし本文・要約・API キー・トークン・署名付き URL を出さない。**
    ID・件数・文字数・所要時間だけを出す（`tests/test_logging_redaction.py` で検査している）。
 5. **`DRY_RUN=true`（既定）では外部への書き込み（CRM の作成・更新、音声の削除）を行わずログだけ出す。**
@@ -96,8 +99,12 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 ```
 ZohoCRM.modules.custom.ALL, ZohoCRM.modules.accounts.READ, ZohoCRM.modules.contacts.READ,
 ZohoCRM.modules.deals.READ, ZohoCRM.coql.READ, ZohoCRM.users.READ,
-ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ, ZohoCRM.org.READ
+ZohoCRM.settings.modules.READ, ZohoCRM.settings.fields.READ, ZohoCRM.org.READ,
+ZohoCRM.modules.attachments.ALL
 ```
+
+`ZohoCRM.modules.attachments.ALL` は全文の添付ファイル（クライアントの `features.transcript_attachment`）に使う（2026-10-19 追加）。
+これより前に発行した接続（マルサン木型の今の接続）には無い。添付を使うクライアントだけ、`setup_zoho_connection.sh` で発行し直す。
 
 `ZohoCRM.org.READ` は接続先の組織の確認に使う（読み取りのみ）。発行・保存は `scripts/setup_zoho_connection.sh`（手順は docs/zoho-connection.md）。
 

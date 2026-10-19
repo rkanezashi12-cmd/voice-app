@@ -166,6 +166,17 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 | ウィジェットの COQL（`ZOHO.CRM.API.coql`） | `Need_Date >= '…' and Need_Date <= '…'`（日付の比較）・選択肢の表示値での `=`・`order by … desc`・`limit 200 offset N` が通る。応答は `{data, info.more_records}`、0件は空（REST の 204）。未確認（実機で一覧が出なければここを疑う） | `widgets/needs-analysis/app/analysis.js` の `needsQuery`、`main.js` の `loadNeeds` |
 | ルックアップ（新しいモジュール同士）の作成 | 「ニーズ」→「ニーズ分析」のルックアップを `crm_setup.py` で作る（商談記録 → 取引先と同じ形。関連リストの名前は「ニーズ」） | `scripts/crm_setup.py` の `NEEDS_SPEC` |
 
+## 全文の添付ファイル（docs/zoho-connection.md、2026-10-19 追加）
+
+公式ドキュメント（zoho.com）にこの環境から接続できず、検索結果の抜粋で確かめた形。実機の最初の添付で確かめる。
+
+| 項目 | 実装での想定 | 該当箇所 |
+|---|---|---|
+| 添付の追加 | `POST /crm/v8/{module}/{record_id}/Attachments`、multipart の `file`。応答は `data[0].status = success`・`details.id` | `app/services/crm.py` の `upload_attachment` |
+| スコープ | `ZohoCRM.modules.attachments.ALL`（操作は ALL / WRITE / CREATE とある。ALL を使う）。カスタムモジュール（商談記録）の添付にも効く | `scripts/setup_zoho_connection.sh` |
+| 添付の一覧（権限の確認） | `GET /crm/v8/MeetingRecords/{id}/Attachments?fields=id,File_Name`。権限以外のエラー（形の違い）は「権限はある」とみなす | `scripts/crm_setup.py` の `check_access` |
+| ファイルの大きさ | `.txt` で数百 KB（3時間の会話でも 1MB 未満）。添付の上限（20MB とされる）に届かない想定 | — |
+
 ## 優先度：中（動くが挙動が変わる）
 
 | # | 項目 | 実装での想定 | 該当箇所 |

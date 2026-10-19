@@ -122,6 +122,9 @@ class FeatureFlags(_Model):
 
     # ニーズ分析（docs/needs-analysis.md）。CRM に「ニーズ」「ニーズ分析」「自社技術」を作ったクライアントだけ true
     needs_analysis: bool = False
+    # 文字起こしの全文を、商談記録に .txt の添付ファイルとしても付ける（項目の 64,000 文字を超えても全文を残す）。
+    # CRM の接続に ZohoCRM.modules.attachments.ALL が要る（足したクライアントだけ true。docs/zoho-connection.md）
+    transcript_attachment: bool = False
 
 
 class ClientConfig(_Model):

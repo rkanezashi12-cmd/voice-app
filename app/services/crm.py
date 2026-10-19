@@ -119,7 +119,13 @@ class CrmService:
             raise CrmWriteForbidden(f"CRM のモジュール {module} への書き込みは許可されていません")
 
     async def _request(
-        self, method: str, path: str, *, json: Any = None, params: dict[str, Any] | None = None
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        params: dict[str, Any] | None = None,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
     ) -> httpx.Response:
         for attempt in range(2):
             token = await self._auth.token()
@@ -131,6 +137,7 @@ class CrmService:
                 base_delay=self._retry_base_delay,
                 json=json,
                 params=params,
+                files=files,
                 headers={"Authorization": f"Zoho-oauthtoken {token}"},
             )
             if resp.status_code == 401 and attempt == 0:
@@ -353,6 +360,37 @@ class CrmService:
         created = sum(1 for _, r in results if r == "created")
         log_event(logger, "crm.created_many", module=module, rows=len(rows), created=created)
         return results
+
+    async def upload_attachment(
+        self, module: str, record_id: str, filename: str, content: bytes
+    ) -> str | None:
+        """記録に添付ファイルを付ける（POST /{module}/{id}/Attachments、multipart の file）。添付の ID を返す。
+
+        書き込み先のガードは記録の書き込みと同じ（商談記録などだけ）。DRY_RUN では送らない。
+        ファイル名は会社名などを含みうるのでログに出さない（大きさだけ）。
+        """
+        self.check_writable(module)
+        if not record_id.isdigit():
+            raise ValueError("record_id が数字ではありません")
+        if self.dry_run:
+            log_event(
+                logger,
+                "dry_run.skip",
+                operation="crm.attach",
+                module=module,
+                record_id=record_id,
+                bytes=len(content),
+            )
+            return None
+        resp = await self._request(
+            "POST",
+            f"/{module}/{record_id}/Attachments",
+            files={"file": (filename, content, "text/plain; charset=utf-8")},
+        )
+        item = self._first_result(resp, "添付ファイルの追加")
+        attachment_id = str((item.get("details") or {}).get("id", "")) or None
+        log_event(logger, "crm.attached", module=module, record_id=record_id, bytes=len(content))
+        return attachment_id
 
     async def upsert_record(
         self, module: str, data: dict[str, Any], duplicate_check_fields: list[str]

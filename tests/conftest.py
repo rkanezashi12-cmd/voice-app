@@ -130,6 +130,9 @@ class FakeCrm:
         self.settings_fields: dict[str, list[dict[str, Any]]] = {}
         self.settings_reads: list[str] = []
         self.users: dict[str, dict[str, Any]] = {}
+        # 添付ファイル（module, record_id, filename, content）と、添付を断るときのエラー
+        self.attachments: list[tuple[str, str, str, bytes]] = []
+        self.fail_attach: AppError | None = None
         self._seq = 0
 
     def check_writable(self, module: str) -> None:
@@ -189,6 +192,17 @@ class FakeCrm:
             rows = [r for r in self.records.get(f.module, {}).values() if r.get(f.recall_id) == recall_id]
             return [{"id": r["id"], f.status: r.get(f.status), f.account: r.get(f.account)} for r in rows[:1]]
         return list(self.coql_rows)
+
+    async def upload_attachment(
+        self, module: str, record_id: str, filename: str, content: bytes
+    ) -> str | None:
+        self.check_writable(module)
+        if self.fail_attach:
+            raise self.fail_attach
+        if self.dry_run:
+            return None
+        self.attachments.append((module, record_id, filename, content))
+        return f"att-{len(self.attachments)}"
 
     async def update_record(self, module: str, record_id: str, data: dict[str, Any]) -> None:
         self.check_writable(module)

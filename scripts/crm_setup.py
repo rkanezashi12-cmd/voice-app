@@ -596,21 +596,56 @@ ACCESS_CHECKS: list[tuple[str, str, str, str, dict[str, str] | None, Any]] = [
         None,
         {"select_query": "select id from MeetingRecords where id is not null limit 1"},
     ),
+    # 全文の添付ファイル（features.transcript_attachment）。商談記録1件の添付の一覧を読むだけ（{record} は COQL で選ぶ）
+    (
+        "ZohoCRM.modules.attachments.ALL",
+        "商談記録の添付ファイルの一覧",
+        "GET",
+        "/crm/v8/MeetingRecords/{record}/Attachments",
+        {"fields": "id,File_Name"},
+        None,
+    ),
 ]
+# 権限が足りないことを示すエラーコード。添付の一覧はこれ以外のエラー（形の違いなど）なら権限はあるとみなす
+SCOPE_ERRORS = {"OAUTH_SCOPE_MISMATCH", "INVALID_TOKEN", "NO_PERMISSION"}
 
 
 def check_access(api: Any) -> list[tuple[bool, str, str, str]]:
     """(通ったか, スコープ, 確認の内容, エラーコード) の一覧。書き込みは行わない。"""
     results = []
+    record: str | None = None
     for scope, label, method, path, params, body in ACCESS_CHECKS:
+        if "{record}" in path:
+            if record is None:
+                try:
+                    rows = (
+                        api.request(
+                            "POST", "/crm/v8/coql", None, {"select_query": ACCESS_CHECKS_RECORD_QUERY}
+                        )
+                        or {}
+                    ).get("data") or []
+                except SetupError:
+                    rows = []
+                record = str(rows[0].get("id", "")) if rows and isinstance(rows[0], dict) else ""
+            if not record.isdigit():
+                results.append((True, scope, f"{label}（商談記録がまだ無いので試していません）", ""))
+                continue
+            path = path.replace("{record}", record)
         try:
             api.request(method, path, params, body)
         except SetupError as e:
-            code = re.search(r'"code"\s*:\s*"([A-Z_]+)"', str(e))
-            results.append((False, scope, label, code.group(1) if code else str(e)[:120]))
+            m = re.search(r'"code"\s*:\s*"([A-Z_]+)"', str(e))
+            code = m.group(1) if m else str(e)[:120]
+            if record and path.endswith("/Attachments") and code not in SCOPE_ERRORS:
+                results.append((True, scope, f"{label}（権限は足りている。応答 {code}）", ""))
+            else:
+                results.append((False, scope, label, code))
         else:
             results.append((True, scope, label, ""))
     return results
+
+
+ACCESS_CHECKS_RECORD_QUERY = "select id from MeetingRecords where id is not null limit 1"
 
 
 def diagnose(api: Any, record_id: str) -> list[str]:
