@@ -58,7 +58,7 @@ class SplitTranscript:
     total_chars: int
 
 
-def split_transcript(text: str, limit: int) -> SplitTranscript:
+def split_transcript(text: str, limit: int, *, attached: bool = False) -> SplitTranscript:
     total = len(text)
     first = cut_at_line(text, limit)
     rest = text[len(first) :]
@@ -68,7 +68,8 @@ def split_transcript(text: str, limit: int) -> SplitTranscript:
     rest = rest.lstrip("\n")
     if u16len(rest) <= limit:
         return SplitTranscript(first, rest, False, total)
-    marker = f"\n（以降省略：全体{total:,}文字）"
+    # 全文を添付ファイルにも付けるクライアントでは、どこで読めるかを書き添える
+    marker = f"\n（以降省略：全体{total:,}文字{'。全文は添付ファイル' if attached else ''}）"
     second = cut_at_line(rest, limit - u16len(marker)).rstrip("\n") + marker
     return SplitTranscript(first, second, True, total)
 

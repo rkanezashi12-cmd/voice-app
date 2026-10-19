@@ -177,7 +177,9 @@ class ProcessRun:
         else:
             corrected = await ai.correct(transcript, glossary, ctx)
         summary = await ai.summarize(corrected, ctx, self.fm.category_choices)
-        split = fmt.split_transcript(corrected.to_text(), self.fm.limits.transcript)
+        attach = self.cs.config.features.transcript_attachment
+        full_text = corrected.to_text()
+        split = fmt.split_transcript(full_text, self.fm.limits.transcript, attached=attach)
         if split.truncated:
             self._log(
                 "transcript.truncated",
@@ -200,7 +202,28 @@ class ProcessRun:
             truncated=split.truncated,
             next_actions=len(summary.next_actions),
         )
+        if attach and self.record_id:
+            await self._attach_transcript(full_text, ctx)
         return ProcessOutcome("done", self.record_id)
+
+    async def _attach_transcript(self, text: str, ctx: MeetingContext) -> None:
+        """全文を .txt で商談記録に添付する（日報を書いたあと）。
+
+        失敗しても日報は書けているので、処理全体は失敗にしない（再試行すると日報を書き直し、添付も重なるため）。
+        """
+        f = self.fm.meeting_record
+        crm = await self.cs.crm()
+        # 先頭に BOM を付ける（Windows のメモ帳・Excel で文字化けしないように）
+        content = ("\ufeff" + text).encode("utf-8")
+        filename = f"文字起こし全文_{ctx.meeting_date.isoformat()}.txt"
+        try:
+            await crm.upload_attachment(f.module, str(self.record_id), filename, content)
+        except (AppError, ValueError) as exc:
+            self._log(
+                "transcript.attachment_failed",
+                logging.WARNING,
+                error_code=getattr(exc, "code", type(exc).__name__),
+            )
 
     def _context(self) -> MeetingContext:
         f = self.fm.meeting_record

@@ -372,3 +372,34 @@ def test_needs_argument_is_checked(args: list[str], monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(cs, "env", lambda name: "x")
     monkeypatch.setattr(cs, "dc", lambda: "us")
     assert cs.main(["crm_setup.py", *args]) == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "ok"), [(None, True), ("REQUIRED_PARAM_MISSING", True), ("OAUTH_SCOPE_MISMATCH", False)]
+)
+def test_check_access_tries_attachments_on_one_record(error: str | None, ok: bool) -> None:
+    calls: list[str] = []
+
+    class Api:
+        def request(self, method: str, path: str, params: dict | None = None, body: Any = None) -> Any:
+            calls.append(path)
+            if path == "/crm/v8/coql":
+                return {"data": [{"id": "5001"}]}
+            if path.endswith("/Attachments") and error:
+                raise cs.SetupError(f'GET {path} が失敗しました（HTTP 400）: {{"code": "{error}"}}')
+            return {}
+
+    results = cs.check_access(Api())
+    row = next(r for r in results if r[1] == "ZohoCRM.modules.attachments.ALL")
+    assert row[0] is ok
+    assert "/crm/v8/MeetingRecords/5001/Attachments" in calls
+
+
+def test_check_access_skips_attachments_without_records() -> None:
+    class Api:
+        def request(self, method: str, path: str, params: dict | None = None, body: Any = None) -> Any:
+            assert not path.endswith("/Attachments")
+            return {}
+
+    row = next(r for r in cs.check_access(Api()) if r[1] == "ZohoCRM.modules.attachments.ALL")
+    assert row[0] is True and "まだ無い" in row[2]

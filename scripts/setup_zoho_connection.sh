@@ -23,8 +23,8 @@ RUN_SA="meeting-notes-run@${PROJECT}.iam.gserviceaccount.com"
 APP_CLIENT="${APP_CLIENT:-default}" # クライアント設定のキー
 DC="${DC:-us}"                      # Zoho の DC（マルサン木型・ものづくりSFAデモ2 は us）
 ORG_ID="${ORG_ID:-}"                # 接続先の組織 ID（default 以外は必須。違う組織なら止まる）
-# CLAUDE.md の8つ＋接続先の組織の確認に使う ZohoCRM.org.READ（読み取りのみ）
-SCOPES="ZohoCRM.modules.custom.ALL,ZohoCRM.modules.accounts.READ,ZohoCRM.modules.contacts.READ,ZohoCRM.modules.deals.READ,ZohoCRM.coql.READ,ZohoCRM.users.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.org.READ"
+# CLAUDE.md の10個（接続先の組織の確認に使う ZohoCRM.org.READ、全文の添付ファイルに使う ZohoCRM.modules.attachments.ALL を含む）
+SCOPES="ZohoCRM.modules.custom.ALL,ZohoCRM.modules.accounts.READ,ZohoCRM.modules.contacts.READ,ZohoCRM.modules.deals.READ,ZohoCRM.coql.READ,ZohoCRM.users.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.org.READ,ZohoCRM.modules.attachments.ALL"
 
 step() { printf '\n==== %s\n' "$*"; }
 fail() {

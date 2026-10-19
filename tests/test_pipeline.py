@@ -380,3 +380,57 @@ async def test_web_recording_keeps_audio_when_the_client_is_dry_run(
     )
     await source.cleanup()
     assert not storage.objects
+
+
+# ---- 全文の添付ファイル（クライアントの features.transcript_attachment） ----
+
+
+def enable_attachment(runtime: Runtime) -> None:
+    cs = runtime.client_services("default")
+    features = cs.config.features.model_copy(update={"transcript_attachment": True})
+    cs.config = cs.config.model_copy(update={"features": features})
+
+
+async def test_full_transcript_is_attached_after_the_report(
+    runtime: Runtime, crm: FakeCrm, recall: FakeRecall
+) -> None:
+    long_text = [
+        {"participant": {"name": "山田" if i % 2 else "佐藤"}, "words": [{"text": f"{i:05d}" + "あ" * 90}]}
+        for i in range(800)
+    ]
+    enable_attachment(runtime)
+    crm.add(F.module, "5001", meeting_record())
+    recall.add_bot("bot-1", "5001", transcript=long_text)
+    outcome = await run_process(runtime, bot_request(), final_attempt=False)
+    assert outcome.status == "done"
+    final = crm.writes_to("5001")[-1]
+    assert final[F.transcript_2].endswith("。全文は添付ファイル）"), "項目には、全文がどこにあるかを書く"
+    assert len(crm.attachments) == 1
+    module, record_id, filename, content = crm.attachments[0]
+    assert (module, record_id) == (F.module, "5001")
+    assert filename == "文字起こし全文_2026-09-28.txt"
+    text = content.decode("utf-8")
+    assert text.startswith("﻿佐藤: 00000")
+    assert "00799" in text, "項目に入りきらない末尾も添付には入る"
+    assert len(text) > 64000
+
+
+async def test_attachment_is_off_by_default(runtime: Runtime, crm: FakeCrm, recall: FakeRecall) -> None:
+    crm.add(F.module, "5001", meeting_record())
+    recall.add_bot("bot-1", "5001", transcript=RECALL_TRANSCRIPT)
+    await run_process(runtime, bot_request(), final_attempt=False)
+    assert crm.attachments == [], "マルサン木型（default）など、使わないクライアントでは添付しない"
+
+
+async def test_attachment_failure_keeps_the_report(
+    runtime: Runtime, crm: FakeCrm, recall: FakeRecall, caplog: pytest.LogCaptureFixture
+) -> None:
+    enable_attachment(runtime)
+    crm.fail_attach = ExternalServiceError("zoho_crm", "scope", status=401, code="OAUTH_SCOPE_MISMATCH")
+    crm.add(F.module, "5001", meeting_record())
+    recall.add_bot("bot-1", "5001", transcript=RECALL_TRANSCRIPT)
+    with caplog.at_level(logging.WARNING):
+        outcome = await run_process(runtime, bot_request(), final_attempt=False)
+    assert outcome.status == "done", "日報は書けているので、処理は完了のまま（やり直さない）"
+    assert crm.writes_to("5001")[-1][F.status] == S.done
+    assert any(r.getMessage() == "transcript.attachment_failed" for r in caplog.records)

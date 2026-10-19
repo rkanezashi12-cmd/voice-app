@@ -325,3 +325,48 @@ async def test_list_records_since_reports_truncation(respx_mock: respx.MockRoute
             "Inquiry", [], datetime(2026, 1, 1, tzinfo=UTC), max_pages=2
         )
     assert len(rows) == 2 and truncated is True
+
+
+async def test_upload_attachment_sends_multipart_file(
+    respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+) -> None:
+    token_route(respx_mock)
+    post = respx_mock.post(f"{US_API}/MeetingRecords/5001/Attachments").mock(return_value=success("att-1"))
+    async with httpx.AsyncClient() as http:
+        with caplog.at_level(logging.INFO):
+            assert (
+                await make_crm(http).upload_attachment(
+                    "MeetingRecords", "5001", "全文_株式会社機密.txt", b"abc"
+                )
+                == "att-1"
+            )
+    req = post.calls[0].request
+    assert req.headers["content-type"].startswith("multipart/form-data")
+    assert b'name="file"' in req.content and b"abc" in req.content
+    assert "機密" not in caplog.text, "ファイル名（会社名を含みうる）はログに出さない"
+
+
+async def test_upload_attachment_is_guarded_and_skipped_in_dry_run(respx_mock: respx.MockRouter) -> None:
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(CrmWriteForbidden):
+            await make_crm(http).upload_attachment("Accounts", "5001", "a.txt", b"x")
+        with pytest.raises(ValueError):
+            await make_crm(http).upload_attachment("MeetingRecords", "../5001", "a.txt", b"x")
+        assert (
+            await make_crm(http, dry_run=True).upload_attachment("MeetingRecords", "5001", "a.txt", b"x")
+            is None
+        )
+    assert len(respx_mock.calls) == 0
+
+
+async def test_upload_attachment_error_names_the_code(respx_mock: respx.MockRouter) -> None:
+    token_route(respx_mock)
+    respx_mock.post(f"{US_API}/MeetingRecords/5001/Attachments").mock(
+        return_value=httpx.Response(
+            401, json={"code": "OAUTH_SCOPE_MISMATCH", "message": "invalid oauth scope", "status": "error"}
+        )
+    )
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ExternalServiceError) as e:
+            await make_crm(http).upload_attachment("MeetingRecords", "5001", "a.txt", b"x")
+    assert e.value.code == "OAUTH_SCOPE_MISMATCH"

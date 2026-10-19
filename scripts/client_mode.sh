@@ -9,8 +9,11 @@
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --test       # 【TEST】を付ける
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --needs-on   # ニーズ分析を使えるようにする（docs/needs-analysis.md）
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --needs-off  # ニーズ分析を使えなくする
+#   APP_CLIENT=monodemo bash scripts/client_mode.sh --attach-on  # 文字起こしの全文を商談記録に添付する
+#                                                                 （先に setup_zoho_connection.sh で添付の権限つきの接続にする）
+#   APP_CLIENT=monodemo bash scripts/client_mode.sh --attach-off # 全文を添付しない
 #
-# 変えるのは Cloud Run の CLIENTS_CONFIG_JSON のそのクライアントの dry_run / crm_test_records / features.needs_analysis だけ。
+# 変えるのは Cloud Run の CLIENTS_CONFIG_JSON のそのクライアントの dry_run / crm_test_records / features.* だけ。
 # CRM には書き込まない。
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -37,7 +40,7 @@ yes_no() {
   done
 }
 
-USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test | --needs-on | --needs-off]"
+USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test | --needs-on | --needs-off | --attach-on | --attach-off]"
 [ -n "$APP_CLIENT" ] || fail "$USAGE"
 [ "$APP_CLIENT" != default ] ||
   fail "default（マルサン木型）はサービス全体の設定のままにします（このスクリプトでは変えません。本番運用は scripts/go_live.sh）"
@@ -53,6 +56,8 @@ case "${1:-}" in
   --test) KEY=crm_test_records VALUE=true LABEL="商談記録の名前の先頭に【TEST】を付ける" ;;
   --needs-on) KEY=features.needs_analysis VALUE=true LABEL="ニーズ分析を使う" ;;
   --needs-off) KEY=features.needs_analysis VALUE=false LABEL="ニーズ分析を使わない" ;;
+  --attach-on) KEY=features.transcript_attachment VALUE=true LABEL="文字起こしの全文を添付する" ;;
+  --attach-off) KEY=features.transcript_attachment VALUE=false LABEL="文字起こしの全文を添付しない" ;;
   *) fail "$USAGE" ;;
 esac
 
@@ -84,10 +89,12 @@ def describe(c: dict) -> str:
     test = c.get("crm_test_records")
     dry = service_bool("DRY_RUN") if dry is None else dry
     test = service_bool("CRM_TEST_RECORDS") if test is None else test
-    needs = bool((c.get("features") or {}).get("needs_analysis"))
+    features = c.get("features") or {}
+    needs = bool(features.get("needs_analysis"))
+    attach = bool(features.get("transcript_attachment"))
     return (
         f"CRM に{'書き込まない（dry_run）' if dry else '書き込む'}・【TEST】を{'付ける' if test else '付けない'}"
-        f"・ニーズ分析を{'使う' if needs else '使わない'}"
+        f"・ニーズ分析を{'使う' if needs else '使わない'}・全文を{'添付する' if attach else '添付しない'}"
     )
 
 
