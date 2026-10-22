@@ -125,6 +125,9 @@ class FeatureFlags(_Model):
     # 文字起こしの全文を、商談記録に .txt の添付ファイルとしても付ける（項目の 64,000 文字を超えても全文を残す）。
     # CRM の接続に ZohoCRM.modules.attachments.ALL が要る（足したクライアントだけ true。docs/zoho-connection.md）
     transcript_attachment: bool = False
+    # ボット・デスクトップ（Recall.ai の文字起こし）の補正を省く（費用を下げる。2026-10-22 ユーザーの判断）。
+    # 補正は全文を書き直すので出力の費用がかかる。省いたときは、用語辞書を要約に渡して、要約の中の表記だけ直す
+    skip_bot_correction: bool = False
 
 
 class ClientConfig(_Model):

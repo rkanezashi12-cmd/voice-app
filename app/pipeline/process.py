@@ -169,14 +169,21 @@ class ProcessRun:
         self._log("pipeline.transcribed", utterances=len(transcript.utterances), chars=transcript.char_count)
 
         ai = self.rt.ai
+        summary_glossary = ""
         if self.source.kind == "web_recording" and not self.rt.settings.correct_gemini_transcripts:
             # 対面録音は文字起こしの時点で用語辞書を使っている。補正は全文を書き直す（出力の費用が文字起こしと
             # 同じだけかかる）ので省く。CORRECT_GEMINI_TRANSCRIPTS=true で戻せる
             corrected = transcript
             self._log("correct.skipped", reason="gemini_transcript")
+        elif self.source.kind != "web_recording" and self.cs.config.features.skip_bot_correction:
+            # ボット・デスクトップでも、クライアントの設定で補正を省く（費用を下げる）。全文は Recall.ai のまま。
+            # 要約には用語辞書を渡し、要約・課題・ニーズなどの表記は辞書の正しい表記にする
+            corrected = transcript
+            summary_glossary = glossary
+            self._log("correct.skipped", reason="client_setting")
         else:
             corrected = await ai.correct(transcript, glossary, ctx)
-        summary = await ai.summarize(corrected, ctx, self.fm.category_choices)
+        summary = await ai.summarize(corrected, ctx, self.fm.category_choices, glossary=summary_glossary)
         attach = self.cs.config.features.transcript_attachment
         full_text = corrected.to_text()
         split = fmt.split_transcript(full_text, self.fm.limits.transcript, attached=attach)
