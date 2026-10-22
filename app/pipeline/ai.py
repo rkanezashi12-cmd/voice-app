@@ -195,12 +195,20 @@ class MeetingAI:
     # ---- 要約・構造化 ----
 
     async def summarize(
-        self, transcript: Transcript, ctx: MeetingContext, category_choices: tuple[str, ...]
+        self,
+        transcript: Transcript,
+        ctx: MeetingContext,
+        category_choices: tuple[str, ...],
+        *,
+        glossary: str = "",
     ) -> SummaryResult:
+        """glossary は補正を省いた文字起こしのときだけ渡す（要約の中の表記を辞書の正しい表記にする）。"""
         model = self.settings.need("gemini_model_text")
         info = ctx.describe()
         if category_choices:
             info += f"\ncategory の選択肢: {'、'.join(category_choices)}"
+        if glossary:
+            info += f"\n\n{glossary}"
         parts = [TextPart(info), TextPart(transcript.to_text())]
         schema = self.prompts.schema(category_choices)
         # JSON が壊れていたときは要約だけをもう一度試す（文字起こしからやり直さない）

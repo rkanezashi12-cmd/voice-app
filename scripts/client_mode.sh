@@ -12,6 +12,8 @@
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --attach-on  # 文字起こしの全文を商談記録に添付する
 #                                                                 （先に setup_zoho_connection.sh で添付の権限つきの接続にする）
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --attach-off # 全文を添付しない
+#   APP_CLIENT=monodemo bash scripts/client_mode.sh --no-bot-correct  # ボットの文字起こしの補正を省く（費用を下げる）
+#   APP_CLIENT=monodemo bash scripts/client_mode.sh --bot-correct     # ボットの文字起こしを補正する（既定）
 #
 # 変えるのは Cloud Run の CLIENTS_CONFIG_JSON のそのクライアントの dry_run / crm_test_records / features.* だけ。
 # CRM には書き込まない。
@@ -40,7 +42,7 @@ yes_no() {
   done
 }
 
-USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test | --needs-on | --needs-off | --attach-on | --attach-off]"
+USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test | --needs-on | --needs-off | --attach-on | --attach-off | --no-bot-correct | --bot-correct]"
 [ -n "$APP_CLIENT" ] || fail "$USAGE"
 [ "$APP_CLIENT" != default ] ||
   fail "default（マルサン木型）はサービス全体の設定のままにします（このスクリプトでは変えません。本番運用は scripts/go_live.sh）"
@@ -58,6 +60,8 @@ case "${1:-}" in
   --needs-off) KEY=features.needs_analysis VALUE=false LABEL="ニーズ分析を使わない" ;;
   --attach-on) KEY=features.transcript_attachment VALUE=true LABEL="文字起こしの全文を添付する" ;;
   --attach-off) KEY=features.transcript_attachment VALUE=false LABEL="文字起こしの全文を添付しない" ;;
+  --no-bot-correct) KEY=features.skip_bot_correction VALUE=true LABEL="ボットの文字起こしの補正を省く" ;;
+  --bot-correct) KEY=features.skip_bot_correction VALUE=false LABEL="ボットの文字起こしを補正する" ;;
   *) fail "$USAGE" ;;
 esac
 
@@ -92,9 +96,11 @@ def describe(c: dict) -> str:
     features = c.get("features") or {}
     needs = bool(features.get("needs_analysis"))
     attach = bool(features.get("transcript_attachment"))
+    skip = bool(features.get("skip_bot_correction"))
     return (
         f"CRM に{'書き込まない（dry_run）' if dry else '書き込む'}・【TEST】を{'付ける' if test else '付けない'}"
         f"・ニーズ分析を{'使う' if needs else '使わない'}・全文を{'添付する' if attach else '添付しない'}"
+        f"・ボットの補正を{'省く' if skip else 'する'}"
     )
 
 

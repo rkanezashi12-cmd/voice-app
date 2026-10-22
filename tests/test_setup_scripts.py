@@ -720,7 +720,10 @@ def test_client_mode_turns_needs_analysis_on_and_off(recall_sim: Path) -> None:
     assert res.returncode == 0 and "何も変えていません" in res.stdout, "もともと使っていない"
 
 
-def test_client_mode_turns_transcript_attachment_on(recall_sim: Path) -> None:
+@pytest.mark.parametrize(
+    ("arg", "key"), [("--attach-on", "transcript_attachment"), ("--no-bot-correct", "skip_bot_correction")]
+)
+def test_client_mode_turns_features_on(recall_sim: Path, arg: str, key: str) -> None:
     res = _run_script(
         recall_sim, "client_mode.sh", ["yes"], _two_clients(), proc_env=MONO_ENV, args=("--attach-on",)
     )

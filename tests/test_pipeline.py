@@ -434,3 +434,40 @@ async def test_attachment_failure_keeps_the_report(
     assert outcome.status == "done", "日報は書けているので、処理は完了のまま（やり直さない）"
     assert crm.writes_to("5001")[-1][F.status] == S.done
     assert any(r.getMessage() == "transcript.attachment_failed" for r in caplog.records)
+
+
+# ---- ボットの補正を省く（クライアントの features.skip_bot_correction） ----
+
+
+async def test_bot_correction_can_be_skipped_and_glossary_goes_to_summary(
+    runtime: Runtime, crm: FakeCrm, recall: FakeRecall, llm: FakeLlm
+) -> None:
+    cs = runtime.client_services("default")
+    features = cs.config.features.model_copy(update={"skip_bot_correction": True})
+    cs.config = cs.config.model_copy(update={"features": features})
+    crm.add(F.module, "5001", meeting_record())
+    crm.add("Glossary", "g1", {"Name": "マルサン木型", "Misrecognitions": "丸三木型", "Term_Type": "社名"})
+    recall.add_bot("bot-1", "5001", transcript=RECALL_TRANSCRIPT)
+    outcome = await run_process(runtime, bot_request(), final_attempt=False)
+    assert outcome.status == "done"
+    assert not [c for c in llm.calls if c["task"] == "correct"], "補正は呼ばない"
+    summarize = next(c for c in llm.calls if c["task"] == "summarize")
+    assert "丸三木型" in summarize["parts"][0].text, "用語辞書を要約に渡す"
+    final = crm.writes_to("5001")[-1]
+    assert final[F.transcript].startswith("山田（当社）: 本日はありがとうございます。"), (
+        "全文は Recall.ai のまま"
+    )
+
+
+async def test_bot_is_corrected_by_default_and_summary_has_no_glossary(
+    runtime: Runtime, crm: FakeCrm, recall: FakeRecall, llm: FakeLlm
+) -> None:
+    crm.add(F.module, "5001", meeting_record())
+    crm.add("Glossary", "g1", {"Name": "マルサン木型", "Misrecognitions": "丸三木型", "Term_Type": "社名"})
+    recall.add_bot("bot-1", "5001", transcript=RECALL_TRANSCRIPT)
+    await run_process(runtime, bot_request(), final_attempt=False)
+    assert [c for c in llm.calls if c["task"] == "correct"], (
+        "マルサン木型（default）などは今までどおり補正する"
+    )
+    summarize = next(c for c in llm.calls if c["task"] == "summarize")
+    assert "丸三木型" not in summarize["parts"][0].text

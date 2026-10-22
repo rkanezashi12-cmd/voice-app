@@ -122,6 +122,26 @@ cd ~/voice-app && bash scripts/process_logs.sh
 予約の時刻（任意）：開始日時を15分以上先にして商談記録を作ると、ボットはその1分前に参加する。
 開始日時が10分以上先なら Recall.ai の予約になり、すぐ参加させるときのボットの空き不足（下の 507）が起きない。
 
+## 補正を省いて費用を下げる（クライアントごと。2026-10-22 追加）
+
+ボットの文字起こし（Recall.ai）は、Gemini が用語辞書を使って全文を書き直す「補正」を通してから要約する。補正は全文を
+書き出すので、1時間の会議で Gemini の費用の大半（約50〜140円）になる。クライアントの設定で補正を省くと、Gemini は要約だけ
+（1時間 数円）になる。
+
+- 省いたとき：全文は Recall.ai の文字起こしのまま（専門用語の聞き違いは直らない）。要約・課題・ニーズ・次のアクションなどは、
+  用語辞書を要約に渡すので、辞書の正しい表記で書かれる
+- 既定は「補正する」。マルサン木型（default）は今までどおり補正する（変えるときはユーザーの指示で）
+- 対面録音は前から補正を省いている（文字起こしの時点で用語辞書を使うため。`CORRECT_GEMINI_TRANSCRIPTS`）
+
+切り替え（例：monodemo。**コードをデプロイしてから**実行する。古いコードは設定を知らず、新しい版が起動に失敗する）
+
+```bash
+APP_CLIENT=monodemo bash scripts/client_mode.sh --no-bot-correct   # 省く（yes）
+APP_CLIENT=monodemo bash scripts/client_mode.sh --bot-correct      # 戻す
+```
+
+ログでは、省いた処理に `correct.skipped`（reason=client_setting）が出る。
+
 ## 4. 詳しく調べるとき（任意）
 
 ボットの様子は、Recall.ai のダッシュボードの「Explorer」で、商談記録の「Recall ID」のボットを開いても見られる。
