@@ -724,12 +724,37 @@ def test_client_mode_turns_needs_analysis_on_and_off(recall_sim: Path) -> None:
     ("arg", "key"), [("--attach-on", "transcript_attachment"), ("--no-bot-correct", "skip_bot_correction")]
 )
 def test_client_mode_turns_features_on(recall_sim: Path, arg: str, key: str) -> None:
-    res = _run_script(
-        recall_sim, "client_mode.sh", ["yes"], _two_clients(), proc_env=MONO_ENV, args=("--attach-on",)
-    )
+    res = _run_script(recall_sim, "client_mode.sh", ["yes"], _two_clients(), proc_env=MONO_ENV, args=(arg,))
     assert res.returncode == 0, res.stderr
     mono = _assert_marusan_untouched(recall_sim)
-    assert mono["features"] == {"transcript_attachment": True}
+    assert mono["features"] == {key: True}
+
+
+def test_client_mode_can_skip_bot_correction_for_default_only(recall_sim: Path) -> None:
+    """マルサン木型（default）で変えられるのはボットの補正だけ（2026-10-25）。monodemo は変えない。"""
+    res = _run_script(
+        recall_sim,
+        "client_mode.sh",
+        ["yes"],
+        _two_clients(),
+        proc_env={"APP_CLIENT": "default"},
+        args=("--no-bot-correct",),
+    )
+    assert res.returncode == 0, res.stderr
+    deployed = _deployed_config(recall_sim)
+    assert deployed["clients"]["default"] == {**MARUSAN, "features": {"skip_bot_correction": True}}
+    assert deployed["clients"]["monodemo"] == MONODEMO
+    assert _saved(recall_sim) == [], "シークレットは保存し直さない"
+    ClientRegistry.from_dict(deployed)
+
+
+@pytest.mark.parametrize("arg", ["--write", "--dry-run", "--live", "--test", "--needs-on", "--attach-on"])
+def test_client_mode_refuses_other_settings_for_default(recall_sim: Path, arg: str) -> None:
+    res = _run_script(
+        recall_sim, "client_mode.sh", ["yes"], _two_clients(), proc_env={"APP_CLIENT": "default"}, args=(arg,)
+    )
+    assert res.returncode == 1
+    assert _env_updates(recall_sim) == []
 
 
 def test_client_mode_shows_state_and_refuses_default(recall_sim: Path) -> None:

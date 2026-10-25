@@ -180,6 +180,19 @@ def test_contacts_multiselect_lookup_is_added_and_explained() -> None:
     assert {c[0] for c in api.calls} <= {"GET", "POST"}
 
 
+def test_meeting_passcode_is_added_alone() -> None:
+    """会議パスコード（2026-10-25）だけが無い組織では、それだけを作る。既存の項目は変えない。"""
+    api = _meeting_records_without("Meeting_Passcode")
+    plan = cs.build_plan(api, cs.SPEC)
+    created = plan.create_fields["MeetingRecords"]
+    assert created == [
+        {"field_label": "会議パスコード", "api_name": "Meeting_Passcode", "data_type": "text", "length": 100}
+    ]
+    cs.apply(api, plan)
+    assert cs.verify(api, cs.SPEC) == []
+    assert {c[0] for c in api.calls} <= {"GET", "POST"}
+
+
 def test_stops_when_contacts_already_has_the_reverse_field_label() -> None:
     api = _meeting_records_without("Customer_Contacts")
     api.fields["Contacts"].append({"api_name": "Old_Link", "field_label": "商談記録", "data_type": "lookup"})

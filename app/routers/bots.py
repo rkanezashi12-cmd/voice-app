@@ -7,9 +7,11 @@ POST /api/bots（CRM ワークフローの Deluge 関数から X-API-Key で呼�
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -33,9 +35,63 @@ NO_READY_BOT_HINT = (
 )
 
 
+# 会議パスコードの置き場所（Recall.ai は会議 URL の中のパスコードで参加する。docs/unverified-apis.md の H12）。
+# Zoom は pwd、Teams の短い URL（/meet/<会議 ID>）は p。Google Meet にはパスコードが無い
+ZOOM_HOSTS = ("zoom.us", "zoom.com")
+TEAMS_HOSTS = ("teams.microsoft.com", "teams.live.com")
+PASSCODE_RE = re.compile(r"^[\x21-\x7e]{1,64}$")
+BAD_PASSCODE = (
+    "会議パスコードは半角の英数字・記号（64文字まで）で入れてください。直して保存すると、もう一度予約します"
+)
+
+
+def _host_in(host: str, hosts: tuple[str, ...]) -> bool:
+    return any(host == h or host.endswith(f".{h}") for h in hosts)
+
+
+def passcode_param(meeting_url: str) -> str | None:
+    """会議パスコードを入れるクエリの名前（入れられない URL なら None）。"""
+    url = urlparse(meeting_url)
+    host = (url.hostname or "").lower()
+    if _host_in(host, ZOOM_HOSTS):
+        return "pwd"
+    if _host_in(host, TEAMS_HOSTS) and url.path.startswith("/meet/"):
+        return "p"
+    return None
+
+
+def with_passcode(meeting_url: str, passcode: str | None) -> tuple[str, str]:
+    """会議 URL にパスコードを足す。返り値は（URL、ログに出す結果）。
+
+    URL にパスコードが入っていればそちらを使う（招待の URL のほうが確か）。ほかのクエリはそのまま残す。
+    """
+    param = passcode_param(meeting_url)
+    url = urlparse(meeting_url)
+    parts = [p for p in url.query.split("&") if p]
+    in_url = param is not None and any(p.startswith(f"{param}=") and len(p) > len(param) + 1 for p in parts)
+    if not passcode:
+        return meeting_url, "in_url" if in_url else "none"
+    if param is None:
+        return meeting_url, "unused"
+    if in_url:
+        return meeting_url, "in_url"
+    parts = [p for p in parts if p != param and not p.startswith(f"{param}=")]
+    parts.append(f"{param}={quote(passcode, safe='')}")
+    return url._replace(query="&".join(parts)).geturl(), "added"
+
+
+def normalize_passcode(value: str | None) -> str | None:
+    """全角を半角にし、空白を除く（招待からのコピーで入ることがある）。空なら None。"""
+    value = "".join(unicodedata.normalize("NFKC", value or "").split())
+    return value or None
+
+
 class CreateBotRequest(BaseModel):
     record_id: str
     meeting_url: Annotated[str, Field(max_length=2048)]
+    # 商談記録の「会議パスコード」（招待で URL と別に書かれているとき）。ログには出さない。
+    # 長さは 422 の応答に値が出ないよう、ここでは制限せず create_bot で確かめる
+    meeting_passcode: str | None = None
     start_at: datetime | None = None
     bot_name: Annotated[str | None, Field(max_length=100)] = None
 
@@ -51,9 +107,15 @@ class CreateBotRequest(BaseModel):
     def check_meeting_url(cls, value: str) -> str:
         url = urlparse(value.strip())
         host = (url.hostname or "").lower()
-        if url.scheme != "https" or not any(host == h or host.endswith(f".{h}") for h in MEETING_HOSTS):
+        if url.scheme != "https" or not _host_in(host, MEETING_HOSTS):
             raise ValueError("Zoom / Teams / Google Meet の会議 URL（https）を指定してください")
         return value.strip()
+
+    @field_validator("meeting_passcode")
+    @classmethod
+    def clean_meeting_passcode(cls, value: str | None) -> str | None:
+        # 形が違うときは 422 にせず、商談記録の「エラー内容」に理由を書く（create_bot）
+        return normalize_passcode(value)
 
     @field_validator("start_at")
     @classmethod
@@ -88,9 +150,16 @@ async def create_bot(body: CreateBotRequest, client: ApiClientDep, rt: RuntimeDe
     crm = await cs.crm()
     recall = await cs.recall()
     join_at = compute_join_at(body.start_at, datetime.now(UTC), cfg.join_lead_seconds)
+    if body.meeting_passcode and not PASSCODE_RE.match(body.meeting_passcode):
+        message = fmt.clip(f"ボットを予約できませんでした: {BAD_PASSCODE}", fm.limits.error_message)
+        await crm.update_record(
+            f.module, body.record_id, {f.status: fm.status.failed, f.error_message: message}
+        )
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, message)
+    meeting_url, passcode = with_passcode(body.meeting_url, body.meeting_passcode)
     try:
         bot = await recall.create_bot(
-            meeting_url=body.meeting_url,
+            meeting_url=meeting_url,
             bot_name=bot_name,
             join_at=join_at,
             metadata={"client_id": client.client_id, "record_id": body.record_id},
@@ -109,5 +178,12 @@ async def create_bot(body: CreateBotRequest, client: ApiClientDep, rt: RuntimeDe
     await crm.update_record(
         f.module, body.record_id, {f.recall_id: bot_id, f.status: fm.status.reserved, f.error_message: None}
     )
-    log_event(logger, "bot.reserved", client_id=client.client_id, record_id=body.record_id, bot_id=bot_id)
+    log_event(
+        logger,
+        "bot.reserved",
+        client_id=client.client_id,
+        record_id=body.record_id,
+        bot_id=bot_id,
+        passcode_state=passcode,
+    )
     return CreateBotResponse(bot_id=bot_id, join_at=join_at, crm_updated=not crm.dry_run)

@@ -173,6 +173,8 @@ SPEC: list[ModuleSpec] = [
             multiselect_lookup(
                 "先方担当者（連絡先）", "Customer_Contacts", "Contacts", "商談記録", "商談記録の先方担当者"
             ),
+            # 会議のパスコード（招待で URL と別に書かれているとき。ボットが会議 URL に足して参加する）。2026-10-25 に足した
+            text("会議パスコード", "Meeting_Passcode", 100),
         ],
     ),
     ModuleSpec(

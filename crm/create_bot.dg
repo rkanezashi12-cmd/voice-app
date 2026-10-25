@@ -4,13 +4,15 @@ void automation.create_bot(String rec_id)
 	// ワークフロー「ボットの予約」から呼ぶ。引数 rec_id に「商談記録 Id」をマッピングすること
 	// （マッピングが無いと rec_id が空になり、何もせずに終わる。そのときはログに「rec_id が空」と出る）。
 	// 予約の結果（Recall ID と状態「予約済」、失敗したら状態「失敗」とエラー内容）はバックエンドが書き込む。
-	// この関数は CRM に書き込まない。会議URL はパスコードを含むことがあるので、ログには有無だけを出す。
+	// この関数は CRM に書き込まない。会議URL・会議パスコードはログに出さない（有無だけを出す）。
+	// 「会議パスコード」は、招待でパスコードが URL と別に書かれているときに入れる（バックエンドが URL に足す）。
 	// 手順は docs/recall-bot.md。
 	//
 	// ---- 設定（API 名はバックエンドの app/field_map.py と合わせる） ----
 	MR_MODULE = "MeetingRecords";
 	F_CAPTURE_METHOD = "Capture_Method";
 	F_MEETING_URL = "Meeting_URL";
+	F_MEETING_PASSCODE = "Meeting_Passcode";
 	F_START_AT = "Start_At";
 	F_RECALL_ID = "Recall_ID";
 	CAPTURE_BOT = "ボット";
@@ -38,6 +40,8 @@ void automation.create_bot(String rec_id)
 	}
 	captureMethod = ifnull(rec.get(F_CAPTURE_METHOD), "").toString();
 	meetingUrl = ifnull(rec.get(F_MEETING_URL), "").toString().trim();
+	// 項目「会議パスコード」がまだ無い組織では null（パスコードなしで予約する）
+	meetingPasscode = ifnull(rec.get(F_MEETING_PASSCODE), "").toString().trim();
 	startAt = ifnull(rec.get(F_START_AT), "").toString().trim();
 	recallId = ifnull(rec.get(F_RECALL_ID), "").toString().trim();
 	urlState = "なし";
@@ -45,7 +49,12 @@ void automation.create_bot(String rec_id)
 	{
 		urlState = "あり";
 	}
-	info "[create_bot] STEP1 取得方法=" + captureMethod + " 会議URL=" + urlState + " 開始日時=" + startAt + " Recall ID=" + recallId;
+	passcodeState = "なし";
+	if(meetingPasscode != "")
+	{
+		passcodeState = "あり";
+	}
+	info "[create_bot] STEP1 取得方法=" + captureMethod + " 会議URL=" + urlState + " 会議パスコード=" + passcodeState + " 開始日時=" + startAt + " Recall ID=" + recallId;
 	if(captureMethod != CAPTURE_BOT)
 	{
 		info "[create_bot] 中止: 取得方法が「" + CAPTURE_BOT + "」ではありません（ワークフローの条件を確認）";
@@ -76,6 +85,10 @@ void automation.create_bot(String rec_id)
 	payload = Map();
 	payload.put("record_id", rec_id.trim());
 	payload.put("meeting_url", meetingUrl);
+	if(meetingPasscode != "")
+	{
+		payload.put("meeting_passcode", meetingPasscode);
+	}
 	if(startAt != "")
 	{
 		payload.put("start_at", startAt);
@@ -83,7 +96,7 @@ void automation.create_bot(String rec_id)
 	headerMap = Map();
 	headerMap.put("X-API-Key", apiKey);
 	headerMap.put("Content-Type", "application/json");
-	// API キーと会議URL はログに出さない
+	// API キー・会議URL・会議パスコードはログに出さない
 	info "[create_bot] STEP2 送信 url=" + baseUrl + "/api/bots";
 	resp = Map();
 	try
@@ -106,7 +119,9 @@ void automation.create_bot(String rec_id)
 	info "[create_bot] STEP2 応答コード=" + respCode;
 	if(respCode != 200)
 	{
-		// 502 は Recall.ai が予約を断ったとき。バックエンドが商談記録に状態「失敗」とエラー内容を書いている
+		// 502 は Recall.ai が予約を断ったとき。会議パスコードの形が違うときは 422。
+		// どちらもバックエンドが商談記録に状態「失敗」とエラー内容を書いている
+		// （会議URL・開始日時の形が違うときの 422 は書かない。応答に理由が出る）
 		info "[create_bot] ERROR: 予約に失敗しました 応答=" + ifnull(resp.get("responseText"), "").toString();
 		return;
 	}
