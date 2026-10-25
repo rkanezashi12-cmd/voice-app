@@ -149,6 +149,16 @@ async def test_join_failure_writes_message(runtime: Runtime, crm: FakeCrm) -> No
     assert "bot_kicked_from_waiting_room" in write[F.error_message]
 
 
+async def test_password_failure_tells_how_to_retry(runtime: Runtime, crm: FakeCrm) -> None:
+    await handle_recall_event(
+        runtime, "default", bot_event("fatal", sub_code="zoom_invalid_meeting_password")
+    )
+    write = crm.writes_to("5001")[0]
+    assert write[F.status] == S.join_failed
+    assert "会議パスコード" in write[F.error_message]
+    assert "「Recall ID」を空にして保存" in write[F.error_message]
+
+
 async def test_record_id_is_looked_up_when_metadata_missing(
     runtime: Runtime, crm: FakeCrm, recall: FakeRecall
 ) -> None:

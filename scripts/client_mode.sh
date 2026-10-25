@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # 2つ目以降のクライアントだけ、CRM に書き込むか（dry_run）・商談記録の名前に【TEST】を付けるか（crm_test_records）を切り替える
 # （Cloud Shell で実行する想定）。default（マルサン木型）はサービス全体の DRY_RUN・CRM_TEST_RECORDS のままで、このスクリプトでは変えない。
+# default で使えるのは、今の状態の表示と、ボットの補正の切り替え（--no-bot-correct / --bot-correct）だけ（2026-10-25）:
+#   bash scripts/marusan_snapshot.sh save && APP_CLIENT=default bash scripts/client_mode.sh --no-bot-correct
+#   bash scripts/marusan_snapshot.sh save   # わざと変えたので控えを取り直す（取り直さないと次の check で違いが出る）
 #
 #   cd ~/voice-app && git pull && APP_CLIENT=monodemo bash scripts/client_mode.sh            # 今の状態を表示するだけ
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --write      # CRM に書き込む（dry_run=false）。ユーザーの指示があるときだけ
@@ -44,8 +47,6 @@ yes_no() {
 
 USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test | --needs-on | --needs-off | --attach-on | --attach-off | --no-bot-correct | --bot-correct]"
 [ -n "$APP_CLIENT" ] || fail "$USAGE"
-[ "$APP_CLIENT" != default ] ||
-  fail "default（マルサン木型）はサービス全体の設定のままにします（このスクリプトでは変えません。本番運用は scripts/go_live.sh）"
 [[ "$APP_CLIENT" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || fail "APP_CLIENT は英小文字・数字・ハイフン（32文字まで）にしてください"
 [ $# -le 1 ] || fail "$USAGE"
 KEY=""
@@ -64,6 +65,9 @@ case "${1:-}" in
   --bot-correct) KEY=features.skip_bot_correction VALUE=false LABEL="ボットの文字起こしを補正する" ;;
   *) fail "$USAGE" ;;
 esac
+if [ "$APP_CLIENT" = default ] && [ -n "$KEY" ] && [ "$KEY" != features.skip_bot_correction ]; then
+  fail "default（マルサン木型）はサービス全体の設定のままにします（このスクリプトで変えられるのはボットの補正だけ。本番運用は scripts/go_live.sh）"
+fi
 
 gcloud config set project "$PROJECT" >/dev/null
 SVC_JSON="$(gcloud run services describe "$SERVICE" --region="$REGION" --format=json 2>/dev/null)" ||

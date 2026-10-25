@@ -19,7 +19,8 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 - Recall.ai のアカウントを共有するクライアントは、Webhook の送り先も署名用シークレットも共通。通知はボット・アップロードの
   `metadata.client_id` で振り分ける（`app/routers/webhooks.py`。署名が合うクライアントに限る）。同じアカウントに送り先を足さない
 - `DRY_RUN`・`CRM_TEST_RECORDS` はサービス全体の設定で、クライアントごとに `dry_run`・`crm_test_records` で上書きできる
-  （`default` は上書きしない。ほかのクライアントは `scripts/client_mode.sh` で切り替える）
+  （`default` は上書きしない。ほかのクライアントは `scripts/client_mode.sh` で切り替える。`default` で `client_mode.sh` が
+  変えられるのはボットの補正（`--no-bot-correct` / `--bot-correct`）だけ）
 - ほかのクライアントの作業では、前後で `scripts/marusan_snapshot.sh save` / `check` を実行し、`default` の設定・シークレットの版・
   DRY_RUN が変わっていないことを確かめる（読み取りだけ）
 - マルサン木型（`default`）の作業は、これまでどおり `APP_CLIENT` を付けずにスクリプトを実行する（`go_live.sh` もサービス全体＝マルサン木型）。

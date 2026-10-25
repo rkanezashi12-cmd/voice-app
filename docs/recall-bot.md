@@ -3,7 +3,7 @@
 > 2つ目以降のクライアント（ものづくりSFAデモ2 など）は [monodemo.md](monodemo.md) の手順で、`APP_CLIENT=<クライアント ID>` を付けて行う。
 > シークレットはクライアントごとに別の名前になり、マルサン木型（`default`）の設定は変わらない。
 
-商談記録の「取得方法」を「ボット」にして「会議URL」を入れると、CRM のワークフローが関数を呼び、
+商談記録の「取得方法」を「ボット」にして「会議URL」を入れると（招待でパスコードが URL と別に書かれていれば「会議パスコード」も）、CRM のワークフローが関数を呼び、
 バックエンドが Recall.ai の録音ボットを予約する。ボットは開始日時の1分前（空ならすぐ）に会議に参加し、
 会議が終わると、文字起こし（Recall.ai）→ 補正・要約（Gemini）→ 商談記録の更新 → 録画の削除 まで自動で進む。
 
@@ -34,6 +34,19 @@
 | Teams | 2026-05 から、ボットは見分けられて待機室で止められる（入室の許可が要る）。2026-10 から、相手の会社の管理者がボットを締め出す設定を使える。匿名の参加を禁止している会社の会議には入れない |
 
 ボットが入れない会議は、デスクトップ録音（入口C）なら録れる（会議にボットが出ない）。
+
+## パスコードのある会議
+
+ボットは会議 URL の中のパスコードで参加する。招待の URL にパスコードが入っていればそのままでよい
+（Zoom の `…/j/123456789?pwd=…`、Teams の `…/meet/123456789?p=…`）。
+
+招待で URL とパスコードが別に書かれているとき（Zoom の「ミーティング ID・パスコード」、Teams の「会議 ID・パスコード」）は、
+商談記録の「会議パスコード」にパスコードを入れてから保存する（会議URL と同時に入れる。項目は [crm-setup.md](crm-setup.md) の手順8で足す）。
+バックエンドが、URL にパスコードが無いときだけ Zoom は `pwd`、Teams の `/meet/` の URL は `p` として足して予約する。
+全角や空白が混じっても半角に直して使う。Google Meet と Teams の長い URL（`/l/meetup-join/…`）では使わない。
+
+パスコードが違って参加できなかったときは、状態が「参加失敗」になり「エラー内容」に案内が入る。
+パスコードを直し、「Recall ID」を空にして保存すると、もう一度予約する。
 
 ## 1. Recall.ai をバックエンドにつなぐ（Cloud Shell、10分）
 
@@ -130,7 +143,7 @@ cd ~/voice-app && bash scripts/process_logs.sh
 
 - 省いたとき：全文は Recall.ai の文字起こしのまま（専門用語の聞き違いは直らない）。要約・課題・ニーズ・次のアクションなどは、
   用語辞書を要約に渡すので、辞書の正しい表記で書かれる
-- 既定は「補正する」。マルサン木型（default）は今までどおり補正する（変えるときはユーザーの指示で）
+- 既定は「補正する」。マルサン木型（default）は今までどおり補正する（変えるときはユーザーの指示で。下の手順）
 - 対面録音は前から補正を省いている（文字起こしの時点で用語辞書を使うため。`CORRECT_GEMINI_TRANSCRIPTS`）
 
 切り替え（例：monodemo。**コードをデプロイしてから**実行する。古いコードは設定を知らず、新しい版が起動に失敗する）
@@ -138,6 +151,15 @@ cd ~/voice-app && bash scripts/process_logs.sh
 ```bash
 APP_CLIENT=monodemo bash scripts/client_mode.sh --no-bot-correct   # 省く（yes）
 APP_CLIENT=monodemo bash scripts/client_mode.sh --bot-correct      # 戻す
+```
+
+マルサン木型（default）で省くとき（ユーザーの指示があるときだけ。補正の設定のほかは変わらない。DRY_RUN などは `go_live.sh` のまま）:
+
+```bash
+cd ~/voice-app && git pull && bash scripts/marusan_snapshot.sh save
+APP_CLIENT=default bash scripts/client_mode.sh --no-bot-correct    # 省く（yes）。戻すときは --bot-correct
+bash scripts/marusan_snapshot.sh check   # 違いは default の features.skip_bot_correction だけのはず
+bash scripts/marusan_snapshot.sh save    # わざと変えたので控えを取り直す
 ```
 
 ログでは、省いた処理に `correct.skipped`（reason=client_setting）が出る。
@@ -166,6 +188,8 @@ cd ~/voice-app && bash scripts/recall_inspect.sh bot 9d349b62-3f21-4afc-8d21-805
 | `応答コード=401` | API キーの誤り。`rotate_api_key.sh` で出した最新のキーを CRM の変数に貼り直す |
 | `応答コード=422` | 会議URL が Zoom / Teams / Google Meet の https の URL ではない。または開始日時の形が違う（ログの `開始日時=` の表示を送る） |
 | `応答コード=502` | Recall.ai が予約を断った。商談記録の「エラー内容」に Recall.ai が返した理由が入る |
+| エラー内容に「会議パスコードは半角の英数字・記号」 | 会議パスコードに使えない文字（日本語など）が入っている。直して保存すると、もう一度予約する |
+| 「参加失敗」でエラー内容に「会議のパスコードが入っていないか、違います」 | 上の「パスコードのある会議」。会議パスコードを入れ直し、「Recall ID」を空にして保存する |
 | エラー内容に「すぐ参加できるボットの空きがありませんでした」 | Recall.ai の 507（すぐ参加させるボットの空き不足）。開始日時を10分以上先にして保存し直す |
 | 会議中なのに状態が「予約済」のまま、`webhook.` の行も出ない | Recall.ai からの通知が届いていない。Webhooks の送り先 URL・イベント（bot）・シークレットを確かめ、`setup_recall.sh` をもう一度実行する |
 | 状態が「参加失敗」 | 待機室で入室を許可しなかった、など。「エラー内容」を確かめる |

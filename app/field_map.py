@@ -33,6 +33,8 @@ class MeetingRecordFields(_Frozen):
     owner: str = "Owner"
     start_at: str = "Start_At"
     meeting_url: str = "Meeting_URL"
+    # 会議パスコード（招待で URL と別に書かれているとき。CRM の関数が読んでバックエンドに渡す。2026-10-25 追加）
+    meeting_passcode: str = "Meeting_Passcode"
     recall_id: str = (
         "Recall_ID"  # bot_id または desktop upload id（デスクトップの upsert キー。一意項目にする）
     )

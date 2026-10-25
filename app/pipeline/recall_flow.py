@@ -44,6 +44,11 @@ def bot_status_for(ev: RecallEvent) -> str | None:
 def failure_message(ev: RecallEvent, attr: str) -> str:
     detail = f"（{ev.sub_code}）" if ev.sub_code else ""
     if attr == "join_failed":
+        if "password" in (ev.sub_code or "").lower():
+            return (
+                f"ボットが会議に参加できませんでした{detail}。会議のパスコードが入っていないか、違います。"
+                "「会議パスコード」に招待のパスコードを入れ、「Recall ID」を空にして保存すると、もう一度予約します。"
+            )
         return f"ボットが会議に参加できませんでした{detail}。相手主催の Zoom では自社の参加者が先に入室してください。"
     if ev.status == "recording_permission_denied":
         return f"会議の主催者が録音を許可しませんでした{detail}"
