@@ -246,6 +246,12 @@ NEEDS_SPEC: list[ModuleSpec] = [
 ]
 
 
+# あとから足した任意の項目（無くてもバックエンドは動く）。接続の確認（setup_zoho_connection.sh）で足りなくても止めない
+OPTIONAL_FIELDS = {
+    "Meeting_Passcode": "Zoom の会議パスコードを入れるときだけ使う。crm_setup.py apply で足せる",
+}
+
+
 # ---- 通信 ----
 
 
@@ -545,7 +551,11 @@ def field_details(api: Any, spec: list[ModuleSpec]) -> list[str]:
         for api_name in ["Name", *(fs["api_name"] for fs in ms.fields)]:
             f = by_field.get(api_name)
             if f is None:
-                lines.append(f"{ms.api_name}.{api_name}: ありません")
+                if api_name in OPTIONAL_FIELDS:
+                    # あとから足した任意の項目。無くてもバックエンドは動く（接続の確認を止めない）
+                    lines.append(f"{ms.api_name}.{api_name}: ありません（任意。{OPTIONAL_FIELDS[api_name]}）")
+                else:
+                    lines.append(f"{ms.api_name}.{api_name}: ありません")
                 continue
             extras = [
                 f"{key}={json.dumps(f[key], ensure_ascii=False)}"

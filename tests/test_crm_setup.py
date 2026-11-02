@@ -416,3 +416,17 @@ def test_check_access_skips_attachments_without_records() -> None:
 
     row = next(r for r in cs.check_access(Api()) if r[1] == "ZohoCRM.modules.attachments.ALL")
     assert row[0] is True and "まだ無い" in row[2]
+
+
+def test_missing_optional_field_does_not_stop_the_connection_check() -> None:
+    api = FakeApi(list(STANDARD), {})
+    cs.apply(api, cs.build_plan(api, cs.SPEC))
+    api.fields["MeetingRecords"] = [
+        f for f in api.fields["MeetingRecords"] if f["api_name"] != "Meeting_Passcode"
+    ]
+    lines = cs.field_details(api, cs.SPEC)
+    line = next(x for x in lines if x.startswith("MeetingRecords.Meeting_Passcode"))
+    assert line.startswith("MeetingRecords.Meeting_Passcode: ありません（任意。")
+    assert not any(x.endswith(": ありません") for x in lines), (
+        "setup_zoho_connection.sh は ': ありません' の行で止まる"
+    )
