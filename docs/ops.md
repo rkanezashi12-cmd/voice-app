@@ -33,6 +33,7 @@ cd ~/voice-app && git pull && bash scripts/setup_github_actions.sh
 
 録音は処理が成功すると消えるので、`save_recording.sh` で保存しておいた MP3 を戻してからやり直す。
 
-1. Cloud Shell：`bash scripts/restore_recording.sh <クライアント> <ID>`（保存した MP3 を GCS に戻す）
+1. Cloud Shell：`bash scripts/restore_recording.sh <クライアント> <ID>`（保存した MP3 を GCS に戻す）。PC に ZIP（`<ID>-raw.zip`。ffmpeg が無いときの保存）しかないときは、Cloud Shell にアップロードして
+   `bash scripts/restore_recording.sh <クライアント> <ID> ~/<ID>-raw.zip`（分割された元のファイルを元の名前のまま戻す）
 2. そのクライアントの全文の添付を使えるようにしておく（docs/zoho-connection.md の「全文の添付ファイル」）
 3. ops：`reprocess`（client・record_id・force=true）
