@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +111,38 @@ async def _to_mp3(src: Path, dst: Path, bitrate: str) -> None:
         "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(src),
         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", bitrate, str(dst),
     )  # fmt: skip
+
+
+async def split_segment(seg: AudioSegment) -> tuple[AudioSegment, AudioSegment]:
+    """区間の音声（MP3）を時間で半分に分ける（文字起こしが出力の上限で切れたときに使う）。"""
+    half = (seg.end - seg.start) / 2
+    with tempfile.TemporaryDirectory(prefix="split-") as tmp:
+        src = Path(tmp) / "in.mp3"
+        await asyncio.to_thread(src.write_bytes, seg.data)
+        outs = []
+        for i, (offset, length) in enumerate(((0.0, half), (half, None))):
+            dst = Path(tmp) / f"out{i}.mp3"
+            args = [
+                "ffmpeg",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                f"{offset:.3f}",
+                "-i",
+                str(src),
+            ]
+            if length is not None:
+                args += ["-t", f"{length:.3f}"]
+            await _run(*args, "-c", "copy", str(dst))
+            outs.append(await asyncio.to_thread(dst.read_bytes))
+    mid = seg.start + half
+    return (
+        AudioSegment(seg.index, seg.start, mid, outs[0], seg.mime_type),
+        AudioSegment(seg.index, mid, seg.end, outs[1], seg.mime_type),
+    )
 
 
 Downloader = Callable[[Chunk, Path], Awaitable[None]]

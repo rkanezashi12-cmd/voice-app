@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from app.errors import ExternalServiceError, PermanentError
+from app.errors import ExternalServiceError
 from app.pipeline.ai import MeetingAI, PromptStore, chunk_utterances
 from app.pipeline.models import MeetingContext, Transcript, Utterance
 from app.services.audio import AudioSegment
@@ -76,13 +76,46 @@ async def test_summarize_gives_up_after_two_invalid_answers() -> None:
         await ai(llm).summarize(Transcript([Utterance("A", "x")]), CTX, ())
 
 
-async def test_truncated_transcription_is_an_error() -> None:
+async def _fake_split(seg: AudioSegment) -> tuple[AudioSegment, AudioSegment]:
+    mid = (seg.start + seg.end) / 2
+    return AudioSegment(seg.index, seg.start, mid, b"a"), AudioSegment(seg.index, mid, seg.end, b"b")
+
+
+async def test_truncated_segment_is_split_in_half_and_retried() -> None:
+    llm = FakeLlm()
+    loop = "\n".join(["話者A: 同じ行"] * 50)
+    llm.transcribe_outputs = [LlmResult(loop, truncated=True), "話者A: 前半", "話者B: 後半"]
+    out = await MeetingAI(llm, PromptStore(), make_settings(), splitter=_fake_split).transcribe(
+        [AudioSegment(0, 0, 1200, b"x")], CTX, ""
+    )
+    assert [u.text for u in out.utterances] == ["前半", "後半"]
+    calls = [c for c in llm.calls if c["task"] == "transcribe"]
+    assert [c["max_output_tokens"] for c in calls] == [14400, 8192, 8192], (
+        "出力の上限は音声の長さに比例（下限あり）"
+    )
+    assert "（600秒〜1200秒）" in calls[2]["parts"][0].text
+    assert "前半" in calls[2]["parts"][0].text, "後半には前半の末尾を文脈として渡す"
+
+
+async def test_short_segment_that_is_still_cut_keeps_the_text_with_a_note() -> None:
     class TruncLlm(FakeLlm):
         async def generate(self, **kwargs: object) -> LlmResult:
-            return LlmResult("話者A: 途中", truncated=True)
+            return LlmResult("話者A: 途中\n" + "話者A: 同じ\n" * 10, truncated=True)
 
-    with pytest.raises(PermanentError):
-        await ai(TruncLlm()).transcribe([AudioSegment(0, 0, 10, b"x")], CTX, "")
+    out = await MeetingAI(TruncLlm(), PromptStore(), make_settings(), splitter=_fake_split).transcribe(
+        [AudioSegment(0, 3600, 3840, b"x")], CTX, ""
+    )
+    texts = [u.text for u in out.utterances]
+    assert texts[:4] == ["途中", "同じ", "同じ", "同じ"], "繰り返しは3回までに減らす"
+    assert texts[-1] == "（1:00:00〜1:04:00 の一部を文字起こしできませんでした）"
+    assert len(texts) == 5, "商談全体は失敗にしない"
+
+
+def test_drop_repeats_keeps_other_lines() -> None:
+    from app.pipeline.ai import drop_repeats
+
+    rows = [Utterance("A", "x")] * 5 + [Utterance("B", "x"), Utterance("A", "y")]
+    assert [(u.speaker, u.text) for u in drop_repeats(rows)] == [("A", "x")] * 3 + [("B", "x"), ("A", "y")]
 
 
 async def test_parallel_transcription_option() -> None:

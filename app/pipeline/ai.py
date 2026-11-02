@@ -10,6 +10,7 @@ import asyncio
 import copy
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from app.errors import ExternalServiceError, PermanentError
 from app.logs import log_event
 from app.pipeline.formatting import normalize_summary
 from app.pipeline.models import MeetingContext, SummaryResult, Transcript, Utterance
-from app.services.audio import AudioSegment
+from app.services.audio import AudioSegment, split_segment
 from app.services.gemini import AudioPart, LlmClient, TextPart
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,23 @@ logger = logging.getLogger(__name__)
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 # 前の区間の末尾として次の区間に渡す行数（話者ラベルをそろえるため）
 PREVIOUS_TAIL_LINES = 12
+# 文字起こしの出力の上限（音声1秒あたり）。実測では20分の区間の出力が多くて約6,500トークン（約5.4/秒）。
+# 同じ行を繰り返し続ける失敗（出力の上限まで止まらない）の費用を抑えるため、余裕をみて音声の長さに比例させる
+TRANSCRIBE_TOKENS_PER_SECOND = 12
+TRANSCRIBE_MIN_OUTPUT_TOKENS = 8192
+# 出力が上限で切れた区間は半分に分けて文字起こしし直す。これより短い区間（秒）は分けない
+TRANSCRIBE_MIN_SPLIT_SECONDS = 150
+# 同じ発言がこの回数より多く続いたら、繰り返しの失敗とみなして落とす
+REPEAT_LIMIT = 3
+# 文字起こしできなかった区間に入れる注記の話者名
+NOTE_SPEAKER = "注記"
+
+
+def _clock(seconds: float) -> str:
+    s = int(seconds)
+    return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+
+
 # 補正結果を採用する条件（元の文字数に対する比率）。外れたら補正せず元の文を使う
 CORRECTION_MIN_RATIO = 0.7
 CORRECTION_MAX_RATIO = 1.3
@@ -97,11 +115,30 @@ def chunk_utterances(utterances: list[Utterance], max_chars: int) -> list[list[U
     return chunks
 
 
+Splitter = Callable[[AudioSegment], Awaitable[tuple[AudioSegment, AudioSegment]]]
+
+
+def drop_repeats(utterances: list[Utterance], limit: int = REPEAT_LIMIT) -> list[Utterance]:
+    """同じ話者・同じ発言が limit 回より多く続く部分を limit 回までにする（繰り返しの失敗の跡を消す）。"""
+    out: list[Utterance] = []
+    run = 0
+    for u in utterances:
+        same = bool(out) and out[-1].speaker == u.speaker and out[-1].text == u.text
+        run = run + 1 if same else 1
+        if run <= limit:
+            out.append(u)
+    return out
+
+
 class MeetingAI:
-    def __init__(self, llm: LlmClient, prompts: PromptStore, settings: Settings) -> None:
+    def __init__(
+        self, llm: LlmClient, prompts: PromptStore, settings: Settings, splitter: Splitter | None = None
+    ) -> None:
         self.llm = llm
         self.prompts = prompts
         self.settings = settings
+        # 切れた区間を半分に分ける（既定は ffmpeg。テストでは偽物を渡す）
+        self.splitter: Splitter = splitter or split_segment
 
     # ---- 対面録音の文字起こし ----
 
@@ -135,23 +172,58 @@ class MeetingAI:
         glossary: str,
         total: int,
         tail: list[Utterance],
+        depth: int = 0,
     ) -> Transcript:
         info = [ctx.describe(), f"区間: {seg.index + 1} / {total}（{int(seg.start)}秒〜{int(seg.end)}秒）"]
         if glossary:
             info.append(glossary)
         if tail:
             info.append("# 前の区間の末尾（参考。出力しない）\n" + Transcript(tail).to_text())
+        seconds = max(1.0, seg.end - seg.start)
         result = await self.llm.generate(
             task="transcribe",
             model=model,
             system_instruction=self.prompts.transcribe,
             parts=[TextPart("\n\n".join(info)), AudioPart(seg.data, seg.mime_type)],
+            max_output_tokens=max(TRANSCRIBE_MIN_OUTPUT_TOKENS, int(seconds * TRANSCRIBE_TOKENS_PER_SECOND)),
         )
-        if result.truncated:
-            raise PermanentError(
-                "文字起こしが出力の上限で途中で切れました（AUDIO_SEGMENT_SECONDS を短くしてください）"
+        if not result.truncated:
+            return Transcript(drop_repeats(Transcript.from_text(result.text).utterances))
+        # 出力の上限で切れた：多くは同じ行を繰り返し続ける失敗。区間を半分に分けて文字起こしし直す
+        if seconds >= TRANSCRIBE_MIN_SPLIT_SECONDS * 2:
+            log_event(
+                logger,
+                "transcribe.split",
+                logging.WARNING,
+                segment=seg.index,
+                start=int(seg.start),
+                seconds=int(seconds),
+                depth=depth,
             )
-        return Transcript.from_text(result.text)
+            try:
+                first, second = await self.splitter(seg)
+            except PermanentError:
+                first = second = None
+            if first is not None and second is not None:
+                a = await self._transcribe_one(model, first, ctx, glossary, total, tail, depth + 1)
+                b = await self._transcribe_one(
+                    model,
+                    second,
+                    ctx,
+                    glossary,
+                    total,
+                    (tail + a.utterances)[-PREVIOUS_TAIL_LINES:],
+                    depth + 1,
+                )
+                return Transcript(a.utterances + b.utterances)
+        # これ以上分けられない：切れるまでの分（繰り返しを落としたもの）を使い、文字起こしできなかったことを書く。
+        # 1区間のために商談全体を失敗にしない
+        log_event(
+            logger, "transcribe.truncated_kept", logging.WARNING, segment=seg.index, start=int(seg.start)
+        )
+        kept = drop_repeats(Transcript.from_text(result.text).utterances)
+        note = f"（{_clock(seg.start)}〜{_clock(seg.end)} の一部を文字起こしできませんでした）"
+        return Transcript([*kept, Utterance(NOTE_SPEAKER, note)])
 
     # ---- 補正 ----
 
