@@ -49,6 +49,10 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
 - **録画・音声は残さない。** 文字起こし後に削除（Recall.ai は API で削除、GCS はライフサイクル1日も併用）
 - 秘密情報は Secret Manager。リポジトリに含めない
 - デプロイは GitHub Actions → Artifact Registry → Cloud Run（Workload Identity 連携。鍵ファイルは使わない）
+  - 運用の作業（デプロイ・再処理・クライアントの設定・費用の確認）はワークフロー `ops` で行う（docs/ops.md）。
+    Claude が `actions_run_trigger` で起動してログを読む。**リポジトリは公開なので、Actions のログには件数・状態だけを出す**
+  - GCP の構築・デプロイの前に、スキル gcp-bootstrap を読む（正本 rkanezashi12-cmd/claude-skills の skills/gcp-bootstrap/SKILL.md。
+    スキル一覧に無ければ add_repo して読む）。新しく確かめたことはスキルに追記して push する
 
 ## 2. 絶対ルール
 

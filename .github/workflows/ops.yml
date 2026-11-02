@@ -1,0 +1,111 @@
+# 運用の作業（デプロイ・再処理・クライアントの切り替え・費用の確認）を、Cloud Shell の代わりに GitHub Actions で行う。手動で起動する。
+# GCP への認証は Workload Identity 連携（鍵ファイルなし）。準備は scripts/setup_github_actions.sh（Cloud Shell で1回）。
+# このリポジトリは公開なので、ログに出すのは件数・状態だけ（商談の中身・会社名・シークレットの値は出さない）。
+# マルサン木型（default）の設定は、作業の前後で marusan_snapshot.sh で比べる（default を意図して変える作業を除く）。
+name: ops
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "作業（deploy：デプロイ／reprocess：対面録音の再処理／client-mode：クライアントの設定／usage：費用の確認）"
+        type: choice
+        default: usage
+        options: [deploy, reprocess, client-mode, usage]
+      client:
+        description: "クライアント（reprocess・client-mode）"
+        type: choice
+        default: monodemo
+        options: [monodemo, default]
+      record_id:
+        description: "商談記録の ID（reprocess）"
+        type: string
+        default: ""
+      option:
+        description: "クライアントの設定（client-mode）"
+        type: choice
+        default: show
+        options:
+          [show, --write, --dry-run, --live, --test, --needs-on, --needs-off, --attach-on, --attach-off, --no-bot-correct, --bot-correct]
+      hours:
+        description: "何時間分を集計するか（usage）"
+        type: string
+        default: "24"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      INPUT_COMMAND: ${{ inputs.command }}
+      INPUT_CLIENT: ${{ inputs.client }}
+      INPUT_RECORD_ID: ${{ inputs.record_id }}
+      INPUT_OPTION: ${{ inputs.option }}
+      INPUT_HOURS: ${{ inputs.hours }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 入力と設定を確かめる
+        run: |
+          case "$INPUT_COMMAND" in
+            reprocess) [[ "$INPUT_RECORD_ID" =~ ^[0-9]{1,30}$ ]] || { echo "::error::record_id は数字で入れてください"; exit 1; } ;;
+            usage) [[ "$INPUT_HOURS" =~ ^[0-9]{1,4}$ ]] || { echo "::error::hours は数字で入れてください"; exit 1; } ;;
+          esac
+          grep -v '^#' deploy/ops.env | grep '=' >> "$GITHUB_ENV"
+          # マルサン木型の設定を意図して変える作業か（そのときは前後の比較をしない）
+          if [ "$INPUT_COMMAND" = client-mode ] && [ "$INPUT_CLIENT" = default ] && [ "$INPUT_OPTION" != show ]; then
+            echo "CHANGES_DEFAULT=1" >> "$GITHUB_ENV"
+          fi
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: マルサン木型の今の状態を控える
+        if: inputs.command != 'usage' && env.CHANGES_DEFAULT != '1'
+        run: bash scripts/marusan_snapshot.sh save
+
+      - name: イメージを作って載せる
+        if: inputs.command == 'deploy'
+        run: |
+          IMAGE="${IMAGE_REPO}:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: デプロイ
+        if: inputs.command == 'deploy'
+        run: bash scripts/deploy.sh
+
+      - name: 対面録音の再処理
+        if: inputs.command == 'reprocess'
+        run: CLIENT_ID="$INPUT_CLIENT" bash scripts/reprocess.sh "$INPUT_RECORD_ID"
+
+      - name: クライアントの設定
+        if: inputs.command == 'client-mode'
+        run: |
+          if [ "$INPUT_OPTION" = show ]; then
+            APP_CLIENT="$INPUT_CLIENT" bash scripts/client_mode.sh
+          else
+            echo yes | APP_CLIENT="$INPUT_CLIENT" bash scripts/client_mode.sh "$INPUT_OPTION"
+          fi
+
+      - name: 費用の確認
+        if: inputs.command == 'usage'
+        run: bash scripts/usage_report.sh "$INPUT_HOURS"
+
+      - name: マルサン木型が変わっていないか比べる
+        if: inputs.command != 'usage' && env.CHANGES_DEFAULT != '1'
+        run: bash scripts/marusan_snapshot.sh check

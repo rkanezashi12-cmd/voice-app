@@ -22,10 +22,16 @@ fail() {
   fail "コミットしていない変更があります（git status で確認し、元に戻してから実行してください）"
 COMMIT="$(git rev-parse --short HEAD)"
 echo "デプロイするコード: $(git rev-parse --abbrev-ref HEAD) ${COMMIT}（$(git log -1 --format=%s)）"
-echo "Cloud Build でイメージを作るので、数分かかります。"
+# IMAGE があれば、作ってあるイメージを使う（GitHub Actions：.github/workflows/ops.yml）。無ければ Cloud Build で作る（Cloud Shell）
+if [ -n "${IMAGE:-}" ]; then
+  SOURCE=(--image="$IMAGE")
+else
+  echo "Cloud Build でイメージを作るので、数分かかります。"
+  SOURCE=(--source=.)
+fi
 
 # 既存のサービスの設定（環境変数・公開設定・インスタンス数など）は、指定しないものはそのまま残る
-gcloud run deploy "$SERVICE" --project="$PROJECT" --region="$REGION" --source=. \
+gcloud run deploy "$SERVICE" --project="$PROJECT" --region="$REGION" "${SOURCE[@]}" \
   --service-account="$RUN_SA" --quiet \
   --update-env-vars="APP_COMMIT=${COMMIT}"
 
