@@ -4,6 +4,7 @@
 # 音声は GCS に1日だけ残る（DRY_RUN=false で処理が終わると消える）。
 #
 #   cd ~/voice-app && bash scripts/reprocess.sh <商談記録の ID>
+#   FORCE=1 bash scripts/reprocess.sh <ID>   # 「完了」の記録もやり直す（全文を添付し直すときなど。日報は書き直される）
 set -euo pipefail
 
 PROJECT="${PROJECT:-voice-ai-510014}"
@@ -11,6 +12,8 @@ REGION="asia-northeast1"
 SERVICE="meeting-notes"
 RECORD_ID="${1:-}"
 CLIENT_ID="${CLIENT_ID:-default}"
+FORCE_JSON=false
+[ "${FORCE:-}" = 1 ] && FORCE_JSON=true
 fail() {
   printf 'エラー: %s\n' "$*" >&2
   exit 1
@@ -31,6 +34,6 @@ print(env.get("SERVICE_URL") or "-", env.get("TASKS_QUEUE") or "-", env.get("TAS
 gcloud tasks create-http-task --project="$PROJECT" --queue="$QUEUE" --location="$REGION" \
   --url="${SERVICE_URL}/internal/process" --method=POST \
   --header="Content-Type: application/json" \
-  --body-content="{\"client_id\":\"${CLIENT_ID}\",\"source\":\"web_recording\",\"record_id\":\"${RECORD_ID}\"}" \
+  --body-content="{\"client_id\":\"${CLIENT_ID}\",\"source\":\"web_recording\",\"record_id\":\"${RECORD_ID}\",\"force\":${FORCE_JSON}}" \
   --oidc-service-account-email="$INVOKER" --oidc-token-audience="$SERVICE_URL" >/dev/null
 echo "処理を積みました（商談記録 ${RECORD_ID}）。数分後に bash scripts/process_logs.sh で結果を確かめてください。"

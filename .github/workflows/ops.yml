@@ -21,6 +21,10 @@ on:
         description: "商談記録の ID（reprocess）"
         type: string
         default: ""
+      force:
+        description: "「完了」の記録もやり直す（reprocess。日報は書き直される）"
+        type: boolean
+        default: false
       option:
         description: "クライアントの設定（client-mode）"
         type: choice
@@ -48,6 +52,7 @@ jobs:
       INPUT_COMMAND: ${{ inputs.command }}
       INPUT_CLIENT: ${{ inputs.client }}
       INPUT_RECORD_ID: ${{ inputs.record_id }}
+      INPUT_FORCE: ${{ inputs.force }}
       INPUT_OPTION: ${{ inputs.option }}
       INPUT_HOURS: ${{ inputs.hours }}
     steps:
@@ -91,7 +96,10 @@ jobs:
 
       - name: 対面録音の再処理
         if: inputs.command == 'reprocess'
-        run: CLIENT_ID="$INPUT_CLIENT" bash scripts/reprocess.sh "$INPUT_RECORD_ID"
+        run: |
+          FORCE=""
+          [ "$INPUT_FORCE" = true ] && FORCE=1
+          CLIENT_ID="$INPUT_CLIENT" FORCE="$FORCE" bash scripts/reprocess.sh "$INPUT_RECORD_ID"
 
       - name: クライアントの設定
         if: inputs.command == 'client-mode'

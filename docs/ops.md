@@ -7,7 +7,7 @@ Run workflow）からも起動できる。
 | 作業（command） | 中身 | 入力 |
 |---|---|---|
 | `deploy` | ランナーでイメージを作り、Artifact Registry に載せて Cloud Run にデプロイ（`scripts/deploy.sh`。環境変数は変えない） | — |
-| `reprocess` | 対面録音の処理をもう一度積む（`scripts/reprocess.sh`） | client・record_id |
+| `reprocess` | 対面録音の処理をもう一度積む（`scripts/reprocess.sh`）。`force` で「完了」の記録もやり直す（日報は書き直される） | client・record_id・force |
 | `client-mode` | クライアントの設定を見る・変える（`scripts/client_mode.sh`） | client・option |
 | `usage` | Gemini の使用量と費用の目安・処理した件数（`scripts/usage_report.sh`） | hours |
 
@@ -28,3 +28,11 @@ cd ~/voice-app && git pull && bash scripts/setup_github_actions.sh
 ```
 
 最後に「OK：deploy/ops.env の WIF_PROVIDER と一致しています」と出れば終わり。違う値が出たら Claude に貼る。
+
+## 「完了」の記録の全文を添付し直す（項目に入りきらなかった長い商談）
+
+録音は処理が成功すると消えるので、`save_recording.sh` で保存しておいた MP3 を戻してからやり直す。
+
+1. Cloud Shell：`bash scripts/restore_recording.sh <クライアント> <ID>`（保存した MP3 を GCS に戻す）
+2. そのクライアントの全文の添付を使えるようにしておく（docs/zoho-connection.md の「全文の添付ファイル」）
+3. ops：`reprocess`（client・record_id・force=true）
