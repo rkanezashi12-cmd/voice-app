@@ -374,13 +374,24 @@ class FakeLlm:
         system_instruction: str,
         parts: list[Any],
         json_schema: dict[str, Any] | None = None,
+        max_output_tokens: int | None = None,
     ) -> LlmResult:
-        self.calls.append({"task": task, "model": model, "parts": parts, "json_schema": json_schema})
+        self.calls.append(
+            {
+                "task": task,
+                "model": model,
+                "parts": parts,
+                "json_schema": json_schema,
+                "max_output_tokens": max_output_tokens,
+            }
+        )
         if self.fail:
             raise self.fail
         if task == "transcribe":
             index = sum(1 for c in self.calls if c["task"] == "transcribe") - 1
-            return LlmResult(self.transcribe_outputs[min(index, len(self.transcribe_outputs) - 1)])
+            out = self.transcribe_outputs[min(index, len(self.transcribe_outputs) - 1)]
+            # 切れた出力を試すときは LlmResult をそのまま入れる
+            return out if isinstance(out, LlmResult) else LlmResult(out)
         if task == "correct":
             text = parts[-1].text
             for a, b in self.replace.items():

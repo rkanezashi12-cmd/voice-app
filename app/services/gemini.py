@@ -59,6 +59,7 @@ class LlmClient(Protocol):
         system_instruction: str,
         parts: list[Part],
         json_schema: dict[str, Any] | None = None,
+        max_output_tokens: int | None = None,
     ) -> LlmResult: ...
 
 
@@ -80,14 +81,22 @@ class GeminiClient:
         return self._client
 
     def build_config(
-        self, system_instruction: str, json_schema: dict[str, Any] | None, thinking_level: str = ""
+        self,
+        system_instruction: str,
+        json_schema: dict[str, Any] | None,
+        thinking_level: str = "",
+        max_output_tokens: int | None = None,
     ) -> Any:
         from google.genai import types
 
         kwargs: dict[str, Any] = {
             "system_instruction": system_instruction,
             "temperature": self._settings.gemini_temperature,
-            "max_output_tokens": self._settings.gemini_max_output_tokens,
+            # 呼び出し側が小さい上限を渡したときはそれを使う（GEMINI_MAX_OUTPUT_TOKENS より大きくはしない）
+            "max_output_tokens": min(
+                max_output_tokens or self._settings.gemini_max_output_tokens,
+                self._settings.gemini_max_output_tokens,
+            ),
         }
         if json_schema is not None:
             kwargs["response_mime_type"] = "application/json"
@@ -117,12 +126,13 @@ class GeminiClient:
         system_instruction: str,
         parts: list[Part],
         json_schema: dict[str, Any] | None = None,
+        max_output_tokens: int | None = None,
     ) -> LlmResult:
         from google.genai import errors
 
         client = self._get_client()
         thinking_level = "" if _NO_THINKING_LEVEL.match(model) else self._settings.thinking_level(task)
-        config = self.build_config(system_instruction, json_schema, thinking_level)
+        config = self.build_config(system_instruction, json_schema, thinking_level, max_output_tokens)
         contents = self.build_contents(parts)
         for attempt in range(MAX_ATTEMPTS):
             try:

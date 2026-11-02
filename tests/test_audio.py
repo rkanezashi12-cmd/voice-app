@@ -8,7 +8,14 @@ from pathlib import Path
 import pytest
 
 from app import recording_objects as ro
-from app.services.audio import choose_split_points, parse_silences, prepare_segments, segments_from_points
+from app.services.audio import (
+    AudioSegment,
+    choose_split_points,
+    parse_silences,
+    prepare_segments,
+    probe_duration,
+    segments_from_points,
+)
 
 FFMPEG = shutil.which("ffmpeg") is not None
 
@@ -71,3 +78,20 @@ async def test_prepare_segments_with_real_ffmpeg(tmp_path: Path) -> None:
     total = segments[-1].end
     assert 22.0 <= total <= 26.0, "4 チャンク × 約6秒がつながる"
     assert list(work.iterdir()) == [], "一時ファイルを残さない"
+
+
+@pytest.mark.skipif(not FFMPEG, reason="ffmpeg が無い環境では実行しない")
+async def test_split_segment_halves_real_audio(tmp_path: Path) -> None:
+    from app.services.audio import _to_mp3, split_segment
+
+    _tone(tmp_path / "tone.webm", 8, 440)
+    src = tmp_path / "tone.mp3"
+    await _to_mp3(tmp_path / "tone.webm", src, "32k")
+    seg = AudioSegment(2, 100.0, 108.0, src.read_bytes())
+    first, second = await split_segment(seg)
+    assert (first.start, first.end, second.start, second.end) == (100.0, 104.0, 104.0, 108.0)
+    assert first.index == second.index == 2
+    for part in (first, second):
+        out = tmp_path / f"{part.start}.mp3"
+        out.write_bytes(part.data)
+        assert 3.0 <= await probe_duration(out) <= 5.0
