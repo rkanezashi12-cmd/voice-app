@@ -28,7 +28,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from app.errors import AppError, PermanentError
+from app.errors import AppError, ExternalServiceError, PermanentError
 from app.logs import log_event
 from app.pipeline import formatting as fmt
 from app.pipeline.records import picklist_value
@@ -192,13 +192,26 @@ class VideoRun:
     async def run(self) -> str:
         """ "done" / "skipped" / "failed" を返す。もう一度試す価値がある失敗（最後の試行でない）は例外のまま投げる。"""
         try:
-            return await self._main()
+            return await self._guarded()
         except AppError as exc:
             if exc.retryable and not self.final_attempt:
                 raise
             self._log("video.failed", logging.ERROR, error_code=exc.code, error=exc.message)
             await self._record_failure(exc.message)
             return "failed"
+
+    async def _guarded(self) -> str:
+        try:
+            return await self._main()
+        except AppError:
+            raise
+        except Exception as exc:
+            # 想定外のエラーは種類だけを出す（中身に動画の場所・署名付き URL が入りうるので、メッセージ・トレースは出さない）。
+            # 原因が分からないので再試行に回し、最後の試行で「失敗」を書く
+            self._log("video.unexpected_error", logging.ERROR, error_code=type(exc).__name__)
+            raise ExternalServiceError(
+                "video", f"想定外のエラー（{type(exc).__name__}）", retryable=True
+            ) from None
 
     async def _main(self) -> str:
         if not self.cs.config.features.video_analysis:

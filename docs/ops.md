@@ -11,6 +11,7 @@ Run workflow）からも起動できる。
 | `client-mode` | クライアントの設定を見る・変える（`scripts/client_mode.sh`） | client・option |
 | `video` | GCS の `videos/<クライアント>/` に置いた動画を解析する（`scripts/video_analyze.sh`。docs/video-analysis.md）。`count` 本（0 は全部）。`force` で解析済みの動画もやり直す | client・count・force |
 | `usage` | Gemini の使用量と費用の目安・処理した件数（`scripts/usage_report.sh`） | hours |
+| `logs` | 処理の記録を時系列で出す（`scripts/process_logs.sh`。ID・件数・状態・エラーの種類だけ） | hours |
 
 - `usage` 以外は、作業の前後で `marusan_snapshot.sh save` / `check` を同じ実行の中で行い、マルサン木型が変わっていないことを確かめる
   （マルサン木型の設定を意図して変える `client-mode`（client=default）だけは比べない）
