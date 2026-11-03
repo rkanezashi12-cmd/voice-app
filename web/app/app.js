@@ -566,6 +566,7 @@ async function init() {
   show("view-loading", false);
   setChrome(true);
   $("user-name").textContent = state.me.user.name || state.me.user.email || "-";
+  $("link-videos").hidden = !state.me.video_analysis;
   if (!state.me.gps_available) {
     $("btn-gps").disabled = true;
     setGpsState("使えません（地図のキーが未設定）");

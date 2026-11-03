@@ -134,8 +134,9 @@ ZohoCRM.modules.attachments.ALL
 `POST /internal/needs-analyze`。商談記録・問合せからニーズを抜き出して「ニーズ」に作り、自社技術と照らした結果を「ニーズ分析」に書く
 （`app/needs/`。docs/needs-analysis.md）。共通処理には合流しない
 
-動画の解析（クライアントの `features.video_analysis`。2026-11-03 追加）：人が GCS の `videos/<クライアント>/` に動画を置く →
-ops（`command=video`）→ `POST /internal/video-batch` → 動画ごとに `POST /internal/video-analyze`。Gemini が動画を 10 分ずつ読み、
+動画の解析（クライアントの `features.video_analysis`。2026-11-03 追加）：録音アプリの「動画の解析」（`/app/videos.html`）で動画を選ぶ →
+ブラウザから GCS の `videos/<クライアント>/` に直接上げる → `POST /api/app/videos/analyze` → `POST /internal/video-analyze`
+（GCS に置いた動画をまとめて依頼するときは ops の `command=video` → `POST /internal/video-batch`）。Gemini が動画を 10 分ずつ読み、
 画面・項目・操作・説明を書き出して、動画1本ごとに商談記録を作る（全文は添付ファイルにも）。動画は処理後に消す（docs/video-analysis.md）
 
 Webhook（`POST /webhooks/recall`）は署名検証 → `metadata.client_id` でクライアントを決める → Cloud Tasks に積んで即 200。
@@ -152,7 +153,7 @@ app/main.py            FastAPI アプリ
 app/config.py          環境変数（pydantic-settings）
 app/clients.py         クライアント（テナント）単位の設定と秘密情報の解決（dry_run・crm_test_records の上書きも）
 app/field_map.py       CRM の API 名・選択肢の値（実物に合わせてここだけ直す）
-app/routers/           bots / desktop / recordings / webhooks / internal / app_auth・app_api（録音アプリ）/ needs（ニーズ分析）
+app/routers/           bots / desktop / recordings / webhooks / internal / app_auth・app_api・app_videos（録音アプリ）/ needs（ニーズ分析）
 app/services/          zoho_auth / crm / recall / gemini / tasks / storage / audio / zoho_login / geocoding
 app/visits.py          録音アプリの訪問先の検索と商談記録の作成（app/web_session.py はログインの Cookie）
 app/pipeline/          共通処理（入口非依存）
@@ -177,6 +178,7 @@ pytest
 node --test tests/js/*.test.mjs            # 録音ページの純粋ロジック
 node tests/e2e/recorder.e2e.mjs            # Chromium の擬似マイクで録音ページを通しで確認
 node tests/e2e/app.e2e.mjs                 # 録音アプリ（/app/）を通しで確認（SCREENSHOT_DIR で画面も残せる）
+node tests/e2e/videos.e2e.mjs              # 動画の解析の画面（/app/videos.html）を通しで確認
 node tests/e2e/widget.e2e.mjs              # 商談日報ウィジェットを偽の Zoho SDK で確認
 node tests/e2e/widget-needs.e2e.mjs        # ニーズ分析ウィジェットを偽の Zoho SDK で確認
 python3 scripts/build_widget.py            # ウィジェットの ZIP を作る（dist/。Zoho の SDK を取りに行く）

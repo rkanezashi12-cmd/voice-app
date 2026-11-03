@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>動画の解析</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header class="topbar"><h1>動画の解析</h1></header>
+
+    <main class="page">
+      <section id="view-loading" class="panel"><div class="panel-body">読み込み中…</div></section>
+
+      <section id="view-login" class="panel" hidden>
+        <h2 class="panel-head">ログイン</h2>
+        <div class="panel-body">
+          <p>先に録音アプリに Zoho CRM のアカウントでログインしてください。ログインしたら、もう一度このページを開いてください。</p>
+          <a class="button primary block" href="/app/">録音アプリを開く</a>
+        </div>
+      </section>
+
+      <section id="view-error" class="panel" hidden>
+        <h2 class="panel-head">表示できません</h2>
+        <div class="panel-body"><p id="error-message"></p></div>
+      </section>
+
+      <div id="view-main" hidden>
+        <section class="panel">
+          <h2 class="panel-head">動画を上げる</h2>
+          <div class="panel-body">
+            <p>
+              業務システムの画面を操作しながら説明した動画を選ぶと、アップロードして解析します。動画1本ごとに CRM の商談記録
+              「動画解析 ＜ファイル名＞」ができ、画面・項目・操作・説明を書き出した全文が添付ファイルに付きます。
+            </p>
+            <p class="hint">
+              mp4・mov・webm など、1本 5GB まで。何本でもまとめて選べます。アップロードが終わるまで、このページを閉じないでください。
+              動画は解析が終わると消えます（アップロードしたまま1日たっても消えます）。
+            </p>
+            <div class="field">
+              <label for="file-input">動画</label>
+              <input id="file-input" type="file" accept="video/*,.mp4,.m4v,.mov,.webm,.avi,.mpeg,.mpg,.wmv,.3gp" multiple />
+            </div>
+            <label class="check"><input id="chk-force" type="checkbox" /> 解析済みの動画（同じファイル名）もやり直す</label>
+            <button id="btn-upload" type="button" class="primary block" disabled>アップロードして解析</button>
+            <ul id="upload-list" class="visit-list"></ul>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-head">解析の状況</h2>
+          <div class="panel-body">
+            <ul id="video-list" class="visit-list"></ul>
+            <p id="video-empty" class="hint" hidden>まだありません。</p>
+            <p id="video-working" class="notice" hidden>解析中の動画があります。1本（30分）あたり数分〜10分ほどかかります（自動で更新します）。</p>
+            <button id="btn-refresh" type="button" class="block">更新</button>
+            <p class="hint">結果は Zoho CRM の商談記録で見られます（添付ファイル「動画解析_＜ファイル名＞.txt」）。</p>
+          </div>
+        </section>
+
+        <p class="hint"><span id="user-name"></span>（<a href="/app/">録音アプリに戻る</a>）</p>
+      </div>
+
+      <p id="toast" class="toast" role="status" hidden></p>
+    </main>
+
+    <script type="module" src="videos.js"></script>
+  </body>
+</html>

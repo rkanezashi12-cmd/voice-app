@@ -392,3 +392,19 @@ button:disabled {
   background: var(--navy);
   color: #fff;
 }
+
+/* 動画の解析（videos.html） */
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+li[data-state="done"] strong::before {
+  content: "✓ ";
+  color: #1a7f37;
+}
+li[data-state="failed"] strong::before {
+  content: "✕ ";
+  color: #b42318;
+}

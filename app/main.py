@@ -18,7 +18,7 @@ from app.errors import AppError, ConfigError, ExternalServiceError, PermanentErr
 from app.logs import log_event, set_trace, setup_logging
 from app.pipeline.process import ProcessRequest, run_process
 from app.pipeline.recall_flow import handle_recall_event
-from app.routers import app_api, app_auth, bots, desktop, internal, needs, recordings, webhooks
+from app.routers import app_api, app_auth, app_videos, bots, desktop, internal, needs, recordings, webhooks
 from app.runtime import Runtime
 from app.services.tasks import LocalTaskQueue
 
@@ -40,11 +40,12 @@ RECORDER_HEADERS = {
     "Cache-Control": "no-cache",
 }
 
-# 録音アプリ（/app/）のセキュリティヘッダー（同じサイトの API だけ。位置情報を使う）
+# 録音アプリ（/app/）のセキュリティヘッダー（同じサイトの API と、動画の GCS への直接アップロードだけ。位置情報を使う）
 APP_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-        "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+        "connect-src 'self' https://storage.googleapis.com; base-uri 'none'; frame-ancestors 'none'; "
+        "form-action 'none'"
     ),
     "Permissions-Policy": "geolocation=(self), microphone=()",
     "Referrer-Policy": "no-referrer",
@@ -135,6 +136,7 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
     app.include_router(internal.router)
     app.include_router(app_auth.router)
     app.include_router(app_api.router)
+    app.include_router(app_videos.router)
     app.include_router(needs.router)
     app.mount("/recorder", StaticFiles(directory=RECORDER_DIR, html=True), name="recorder")
     app.mount("/app", StaticFiles(directory=APP_DIR, html=True), name="app")
