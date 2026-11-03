@@ -34,6 +34,7 @@ from app.pipeline import formatting as fmt
 from app.pipeline.records import picklist_value
 from app.services.gemini import LlmResult, TextPart, VideoPart
 from app.services.tasks import task_name
+from app.videos.report import report_text, strings
 
 logger = logging.getLogger(__name__)
 
@@ -298,8 +299,8 @@ class VideoRun:
     def _fields(self, report: dict[str, Any], described: Described) -> dict[str, Any]:
         f, s, lim = self.fm.meeting_record, self.fm.status, self.fm.limits
         summary = report.get("summary") or ""
-        screens = fmt.bullets(_strings(report.get("screens")))
-        functions = fmt.bullets(_strings(report.get("functions")))
+        screens = fmt.bullets(strings(report.get("screens")))
+        functions = fmt.bullets(strings(report.get("functions")))
         parts = [summary]
         if screens:
             parts.append(f"【出てきた画面】\n{screens}")
@@ -313,9 +314,9 @@ class VideoRun:
             f.error_message: None,
             f.category: self.fm.video.category,
             f.summary: fmt.clip("\n\n".join(p for p in parts if p), lim.summary),
-            f.issues: fmt.clip(fmt.bullets(_strings(report.get("issues"))), lim.issues),
-            f.needs: fmt.clip(fmt.bullets(_strings(report.get("requirements"))), lim.needs),
-            f.next_actions: fmt.clip(fmt.bullets(_strings(report.get("questions"))), lim.next_actions),
+            f.issues: fmt.clip(fmt.bullets(strings(report.get("issues"))), lim.issues),
+            f.needs: fmt.clip(fmt.bullets(strings(report.get("requirements"))), lim.needs),
+            f.next_actions: fmt.clip(fmt.bullets(strings(report.get("questions"))), lim.next_actions),
             f.transcript: split.first,
             f.transcript_2: split.second,
         }
@@ -325,23 +326,9 @@ class VideoRun:
         f = self.fm.meeting_record
         crm = await self.cs.crm()
         today = datetime.now(ZoneInfo(self.cs.config.timezone)).date().isoformat()
-        sections = [
-            f"動画：{self.title}",
-            f"長さ：{clock(duration) if duration else '（不明）'}　解析日：{today}",
-            "",
-            "■ 要約",
-            report.get("summary") or "",
-        ]
-        for label, key in (
-            ("出てきた画面", "screens"),
-            ("機能・使い方", "functions"),
-            ("今の課題", "issues"),
-            ("要件の候補", "requirements"),
-            ("確かめること", "questions"),
-        ):
-            sections += ["", f"■ {label}", fmt.bullets(_strings(report.get(key))) or "（なし）"]
-        sections += ["", "■ 場面ごとの記録", described.text]
-        content = ("﻿" + "\n".join(sections)).encode("utf-8")
+        header = f"長さ：{clock(duration) if duration else '（不明）'}　解析日：{today}"
+        text = report_text(self.title, header, report, described.text)
+        content = ("\ufeff" + text).encode("utf-8")
         filename = re.sub(r'[\\/:*?"<>|]', "_", f"{self.fm.video.attachment_prefix}{self.title}") + ".txt"
         try:
             await crm.upload_attachment(f.module, str(self.record_id), filename, content)
@@ -430,26 +417,27 @@ class VideoRun:
         if not text.strip():
             raise PermanentError("動画から何も読み取れませんでした")
         header = f"動画：{self.title}（長さ {clock(duration) if duration else '不明'}）"
-        result = await self.rt.llm.generate(
-            task="video_summarize",
-            model=self.settings.need("gemini_model_text"),
-            system_instruction=self.rt.prompts.video_summarize,
-            parts=[TextPart(f"{header}\n\n{text}")],
-            json_schema=self.rt.prompts.video_schema,
-        )
-        try:
-            data = json.loads(result.text)
-        except json.JSONDecodeError as exc:
-            raise PermanentError("要約の形式が正しくありませんでした") from exc
-        if not isinstance(data, dict):
-            raise PermanentError("要約の形式が正しくありませんでした")
-        return data
-
-
-def _strings(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [v.strip() for v in value if isinstance(v, str) and v.strip()]
+        # まず画面ごとの詳細まで含めてまとめる。出力が切れた・形が崩れたときは、詳細を省いた形でまとめ直す
+        for schema, detailed in (
+            (self.rt.prompts.video_schema_detail, True),
+            (self.rt.prompts.video_schema, False),
+        ):
+            result = await self.rt.llm.generate(
+                task="video_summarize",
+                model=self.settings.need("gemini_model_text"),
+                system_instruction=self.rt.prompts.video_summarize,
+                parts=[TextPart(f"{header}\n\n{text}")],
+                json_schema=schema,
+            )
+            try:
+                data = json.loads(result.text)
+            except json.JSONDecodeError:
+                data = None
+            if isinstance(data, dict) and not result.truncated:
+                return data
+            if detailed:
+                self._log("video.summary_simplified", truncated=result.truncated)
+        raise PermanentError("要約の形式が正しくありませんでした")
 
 
 async def run_video_analysis(rt: Any, task: VideoTask, *, final_attempt: bool) -> str:

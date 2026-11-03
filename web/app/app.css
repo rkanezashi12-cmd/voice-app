@@ -426,3 +426,14 @@ li[data-state="failed"] strong::before {
 .back {
   margin: 0 0 8px;
 }
+.downloads {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 4px;
+}
+.downloads .button {
+  flex: 1;
+  text-align: center;
+  padding: 8px;
+  font-size: 0.9rem;
+}

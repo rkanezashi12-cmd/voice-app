@@ -200,6 +200,23 @@ class FakeCrm:
             return [{"id": r["id"], f.status: r.get(f.status), f.account: r.get(f.account)} for r in rows[:1]]
         return list(self.coql_rows)
 
+    async def list_attachments(self, module: str, record_id: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": str(i + 1),
+                "File_Name": name,
+                "Size": len(content),
+                "Created_Time": "2026-11-03T20:00:00+09:00",
+            }
+            for i, (m, rid, name, content) in enumerate(self.attachments)
+            if m == module and rid == record_id
+        ]
+
+    async def download_attachment(self, module: str, record_id: str, attachment_id: str) -> bytes:
+        m, rid, _, content = self.attachments[int(attachment_id) - 1]
+        assert (m, rid) == (module, record_id)
+        return content
+
     async def upload_attachment(
         self, module: str, record_id: str, filename: str, content: bytes
     ) -> str | None:

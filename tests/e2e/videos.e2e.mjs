@@ -174,6 +174,11 @@ try {
   assert.equal(await page.locator("#link-app").getAttribute("href"), "/app/?c=monodemo");
   assert.match(await page.locator("#user-name").textContent(), /ものづくりSFAデモ2 金指 営業/);
   assert.match(await page.locator("#video-list").textContent(), /00_前回の動画/);
+  // 完了した動画は Word（詳細・要約）をダウンロードできる
+  assert.deepEqual(
+    await page.locator("#video-list li[data-state='done'] .downloads a").evaluateAll((els) => els.map((e) => e.getAttribute("href"))),
+    ["/api/app/videos/1/report.docx?kind=detail", "/api/app/videos/1/report.docx?kind=summary"],
+  );
   assert.equal(await page.locator("#btn-upload").isDisabled(), true);
   await shot(page, "videos-1-start");
 

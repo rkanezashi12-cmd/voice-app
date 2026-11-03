@@ -192,6 +192,7 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 | M12 | `media_resolution`（`GenerateContentConfig`）の効き方 | 空ならモデルの既定。画面の小さい文字が読めなければ `GEMINI_VIDEO_MEDIA_RESOLUTION=high`、費用を下げるなら `low` | `app/services/gemini.py` |
 | M13 | ffprobe で署名付き URL（GCS の GET）から動画の長さを読めること | 先頭（とファイルの終わりの目次）だけを読む想定。読めなければ動画の全体を1回で読ませる（長いと出力が切れることがある） | `app/videos/analysis.py` |
 | M14 | COQL の `like '%…'`（名前の後ろ一致）で商談記録を探せること | 同じ動画の記録を探す（【TEST】の有無を問わない） | `app/videos/analysis.py` |
+| M15 | Zoho の添付ファイルの取得（`GET /crm/v8/{module}/{id}/Attachments/{attachment_id}` で中身がそのまま返る）と一覧（`GET …/Attachments?fields=id,File_Name,Size,Created_Time`）。2026-11-03 追加。一覧は接続の確認（`crm_setup.py check-access`）で実機で通っている | 動画の解析の Word（`/api/app/videos/{id}/report.docx`） | `app/services/crm.py` |
 | M9 | Cloud Tasks のタスク名による重複排除が効く期間 | 同じ名前は一定期間登録できない（期間は要確認）。処理済みのレコードは共通処理側でも止める | `app/services/tasks.py` |
 
 確認済み（2026-09-30 日本時間、本番の Cloud Run で `DRY_RUN=false` にして商談記録に書き込み。docs/processing-test.md の記録）：
