@@ -74,7 +74,7 @@ FAKE_GCLOUD = r"""#!/usr/bin/env bash
 printf '%q ' "$@" >> "$SIM/gcloud.log"; echo >> "$SIM/gcloud.log"
 fake_key() { echo "AIzaSyFake_${1//-/_}"; }
 case "$1 $2" in
-  "config set" | "secrets add-iam-policy-binding" | "logging read") exit 0 ;;
+  "config set" | "secrets add-iam-policy-binding" | "logging read" | "tasks create-http-task") exit 0 ;;
   "secrets describe")
     [ "$3" = recording-token-secret ] || [ -f "$SIM/store/$3" ] ;;
   "secrets versions")
@@ -721,7 +721,12 @@ def test_client_mode_turns_needs_analysis_on_and_off(recall_sim: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("arg", "key"), [("--attach-on", "transcript_attachment"), ("--no-bot-correct", "skip_bot_correction")]
+    ("arg", "key"),
+    [
+        ("--attach-on", "transcript_attachment"),
+        ("--no-bot-correct", "skip_bot_correction"),
+        ("--video-on", "video_analysis"),
+    ],
 )
 def test_client_mode_turns_features_on(recall_sim: Path, arg: str, key: str) -> None:
     res = _run_script(recall_sim, "client_mode.sh", ["yes"], _two_clients(), proc_env=MONO_ENV, args=(arg,))
@@ -978,3 +983,29 @@ def test_setup_app_login_skips_enabling_apis_that_are_already_enabled(recall_sim
     assert res.returncode == 0, res.stderr
     enables = [c for c in _gcloud_calls(recall_sim) if c[:2] == ["services", "enable"]]
     assert [c[2] for c in enables] == ["geocoding-backend.googleapis.com"]
+
+
+def test_video_analyze_enqueues_a_batch(recall_sim: Path) -> None:
+    env = {"SERVICE_URL": "https://svc.example", "TASKS_QUEUE": "q", "TASKS_INVOKER_SA": "inv@example.com"}
+    res = _run_script(
+        recall_sim,
+        "video_analyze.sh",
+        [],
+        _two_clients(),
+        extra_env=env,
+        proc_env=MONO_ENV | {"CLIENT_ID": "monodemo"},
+        args=("2",),
+    )
+    assert res.returncode == 0, res.stderr
+    [call] = [c for c in _gcloud_calls(recall_sim) if c[:2] == ["tasks", "create-http-task"]]
+    assert "--url=https://svc.example/internal/video-batch" in call
+    assert '--body-content={"client_id":"monodemo","limit":2,"force":false}' in call
+    assert "本数 2" in res.stdout
+
+
+@pytest.mark.parametrize("args", [("abc",), ("-1",)])
+def test_video_analyze_rejects_bad_count(recall_sim: Path, args: tuple[str, ...]) -> None:
+    res = _run_script(
+        recall_sim, "video_analyze.sh", [], _two_clients(), proc_env={"CLIENT_ID": "monodemo"}, args=args
+    )
+    assert res.returncode != 0 and "本数" in res.stderr

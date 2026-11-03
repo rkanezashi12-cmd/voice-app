@@ -65,6 +65,13 @@ class FakeStorage:
     signed: list[tuple[str, str, int]] = field(default_factory=list)
     deleted_prefixes: list[str] = field(default_factory=list)
     dry_run: bool = False
+    bucket_name: str = "bucket"
+
+    async def download_url(self, object_name: str, ttl_seconds: int) -> str:
+        return f"https://storage.googleapis.com/bucket/{object_name}?X-Goog-Signature=fake-get"
+
+    def gs_uri(self, object_name: str) -> str:
+        return f"gs://{self.bucket_name}/{object_name}"
 
     async def upload_url(self, object_name: str, content_type: str, ttl_seconds: int) -> str:
         self.signed.append((object_name, content_type, ttl_seconds))
@@ -365,6 +372,19 @@ class FakeLlm:
         # ニーズ分析：抜き出しは元ごとに1件（needs_per_source で上書き）、分析は全ニーズを1つのテーマにまとめる
         self.needs_per_source: dict[str, list[dict[str, str]]] = {}
         self.analyze_output: str | None = None
+        # 動画の解析
+        self.video_outputs: list[str | LlmResult] = []
+        self.video_summary = json.dumps(
+            {
+                "summary": "受注入力の流れを説明している。",
+                "screens": ["受注入力：受注を登録する"],
+                "functions": ["品番で検索する"],
+                "issues": ["納期を Excel で別に管理している"],
+                "requirements": ["納期を一覧で見られること"],
+                "questions": ["締め日はいつか"],
+            },
+            ensure_ascii=False,
+        )
 
     async def generate(
         self,
@@ -402,6 +422,14 @@ class FakeLlm:
             default = [{"title": "見出し", "detail": "内容", "type": "品質", "evidence": "根拠"}]
             results = [{"source": k, "needs": self.needs_per_source.get(k, default)} for k in keys]
             return LlmResult(json.dumps({"results": results}, ensure_ascii=False))
+        if task == "video_describe":
+            # video_outputs を順に返す（LlmResult を入れれば切れた出力も試せる）。無ければ範囲を書いた1行
+            if self.video_outputs:
+                out = self.video_outputs.pop(0)
+                return out if isinstance(out, LlmResult) else LlmResult(out)
+            return LlmResult(f"## 場面 {parts[1].text.splitlines()[0]}\n- 項目：受注番号")
+        if task == "video_summarize":
+            return LlmResult(self.video_summary)
         if task == "needs_analyze":
             if self.analyze_output is not None:
                 return LlmResult(self.analyze_output)

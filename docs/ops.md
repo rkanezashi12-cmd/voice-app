@@ -9,6 +9,7 @@ Run workflow）からも起動できる。
 | `deploy` | ランナーでイメージを作り、Artifact Registry に載せて Cloud Run にデプロイ（`scripts/deploy.sh`。環境変数は変えない） | — |
 | `reprocess` | 対面録音の処理をもう一度積む（`scripts/reprocess.sh`）。`force` で「完了」の記録もやり直す（日報は書き直される） | client・record_id・force |
 | `client-mode` | クライアントの設定を見る・変える（`scripts/client_mode.sh`） | client・option |
+| `video` | GCS の `videos/<クライアント>/` に置いた動画を解析する（`scripts/video_analyze.sh`。docs/video-analysis.md）。`count` 本（0 は全部）。`force` で解析済みの動画もやり直す | client・count・force |
 | `usage` | Gemini の使用量と費用の目安・処理した件数（`scripts/usage_report.sh`） | hours |
 
 - `usage` 以外は、作業の前後で `marusan_snapshot.sh save` / `check` を同じ実行の中で行い、マルサン木型が変わっていないことを確かめる

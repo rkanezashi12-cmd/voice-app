@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {"type": "string"},
+    "screens": {"type": "array", "items": {"type": "string"}},
+    "functions": {"type": "array", "items": {"type": "string"}},
+    "issues": {"type": "array", "items": {"type": "string"}},
+    "requirements": {"type": "array", "items": {"type": "string"}},
+    "questions": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["summary", "screens", "functions", "issues", "requirements", "questions"]
+}

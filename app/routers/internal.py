@@ -3,6 +3,8 @@
 - POST /internal/recall-event … Webhook の中身を処理（状態の書き込み、共通処理を積む）
 - POST /internal/process      … 共通処理（入口非依存）
 - POST /internal/needs-analyze … ニーズ分析（app/needs/analysis.py）
+- POST /internal/video-batch   … 置いてある動画ごとに解析を積む（app/videos/analysis.py）
+- POST /internal/video-analyze … 動画1本の解析
 
 503 を返すと Cloud Tasks が再試行する。再試行しても直らない失敗は 200 を返して CRM に「失敗」を記録済み。
 """
@@ -22,6 +24,7 @@ from app.logs import log_event
 from app.needs.analysis import NeedsAnalysisTask, run_needs_analysis
 from app.pipeline.process import ProcessRequest, run_process
 from app.pipeline.recall_flow import handle_recall_event
+from app.videos.analysis import VideoBatchTask, VideoTask, enqueue_videos, run_video_analysis
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/internal", tags=["internal"], dependencies=[TasksOidcDep])
@@ -89,3 +92,43 @@ async def needs_analyze(body: NeedsAnalysisTask, request: Request, rt: RuntimeDe
             return JSONResponse({"status": "retry"}, status_code=503)
         return JSONResponse({"status": "failed", "message": exc.message})
     return JSONResponse({"status": result, "record_id": body.record_id})
+
+
+@router.post("/video-batch")
+async def video_batch(body: VideoBatchTask, request: Request, rt: RuntimeDep) -> JSONResponse:
+    final = _retry_count(request) + 1 >= rt.settings.tasks_max_attempts
+    try:
+        count = await enqueue_videos(rt, body)
+    except AppError as exc:
+        retry = exc.retryable and not final
+        log_event(
+            logger,
+            "video.batch_retry" if retry else "video.batch_failed",
+            logging.WARNING if retry else logging.ERROR,
+            client_id=body.client_id,
+            error_code=exc.code,
+            error=exc.message,
+        )
+        if retry:
+            return JSONResponse({"status": "retry"}, status_code=503)
+        return JSONResponse({"status": "failed", "message": exc.message})
+    return JSONResponse({"status": "enqueued", "videos": count})
+
+
+@router.post("/video-analyze")
+async def video_analyze(body: VideoTask, request: Request, rt: RuntimeDep) -> JSONResponse:
+    final = _retry_count(request) + 1 >= rt.settings.tasks_max_attempts
+    try:
+        result = await run_video_analysis(rt, body, final_attempt=final)
+    except AppError as exc:
+        # ここに来るのは、まだ再試行する失敗だけ（最後の試行の失敗は商談記録に「失敗」を書いてある）
+        log_event(
+            logger,
+            "video.retry",
+            logging.WARNING,
+            client_id=body.client_id,
+            error_code=exc.code,
+            error=exc.message,
+        )
+        return JSONResponse({"status": "retry"}, status_code=503)
+    return JSONResponse({"status": result})
