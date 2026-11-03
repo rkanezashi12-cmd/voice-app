@@ -152,8 +152,25 @@ function renderVideos(videos) {
     name.textContent = v.name || "（名前なし）";
     const info = document.createElement("span");
     info.className = "hint";
-    info.textContent = ` ${v.status || "解析中"}　${dateLabel(v.created)}`;
+    info.textContent = ` ${kind === "working" ? "解析中" : v.status}　${dateLabel(v.created)}`;
     li.append(name, info);
+    if (kind === "done") {
+      // 解析の結果の Word（詳細・要約）。CRM の添付ファイルからその場で作る
+      const links = document.createElement("div");
+      links.className = "downloads";
+      for (const [label, k] of [
+        ["詳細（Word）", "detail"],
+        ["要約（Word）", "summary"],
+      ]) {
+        const a = document.createElement("a");
+        a.className = "button";
+        a.href = `/api/app/videos/${encodeURIComponent(v.id)}/report.docx?kind=${k}`;
+        a.textContent = label;
+        a.setAttribute("download", "");
+        links.append(a);
+      }
+      li.append(links);
+    }
     if (kind === "failed" && v.error) {
       const err = document.createElement("div");
       err.className = "warning";

@@ -10,3 +10,4 @@ google-cloud-tasks==2.25.0
 google-cloud-secret-manager==2.30.0
 google-genai==2.25.0
 tzdata==2026.4
+python-docx==1.2.0

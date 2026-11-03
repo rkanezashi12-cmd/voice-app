@@ -361,6 +361,32 @@ class CrmService:
         log_event(logger, "crm.created_many", module=module, rows=len(rows), created=created)
         return results
 
+    async def list_attachments(self, module: str, record_id: str) -> list[dict[str, Any]]:
+        """記録の添付ファイルの一覧（id・File_Name・Size・Created_Time。読むだけ）。"""
+        if not record_id.isdigit():
+            raise ValueError("record_id が数字ではありません")
+        resp = await self._request(
+            "GET", f"/{module}/{record_id}/Attachments", params={"fields": "id,File_Name,Size,Created_Time"}
+        )
+        if resp.status_code == 204:
+            return []
+        if resp.status_code >= 400:
+            raise error_from_response("zoho_crm", resp, "添付ファイルの一覧の取得に失敗しました")
+        data = self._json(resp).get("data")
+        return [d for d in data if isinstance(d, dict)] if isinstance(data, list) else []
+
+    async def download_attachment(self, module: str, record_id: str, attachment_id: str) -> bytes:
+        """添付ファイルの中身（GET /{module}/{id}/Attachments/{attachment_id}。読むだけ）。"""
+        if not record_id.isdigit() or not attachment_id.isdigit():
+            raise ValueError("ID が数字ではありません")
+        resp = await self._request("GET", f"/{module}/{record_id}/Attachments/{attachment_id}")
+        if resp.status_code >= 400:
+            raise error_from_response("zoho_crm", resp, "添付ファイルの取得に失敗しました")
+        log_event(
+            logger, "crm.attachment_downloaded", module=module, record_id=record_id, bytes=len(resp.content)
+        )
+        return resp.content
+
     async def upload_attachment(
         self, module: str, record_id: str, filename: str, content: bytes
     ) -> str | None:
