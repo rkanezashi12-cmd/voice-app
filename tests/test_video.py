@@ -336,3 +336,26 @@ def test_gemini_builds_video_part_and_media_resolution() -> None:
 def test_media_resolution_setting_is_checked() -> None:
     with pytest.raises(ValueError):
         make_settings(gemini_video_media_resolution="ultra")
+
+
+async def test_unexpected_error_is_retried_then_recorded(
+    runtime: Runtime,
+    storage: FakeStorage,
+    crm: FakeCrm,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    storage.objects[VIDEO] = b"video"
+    name_search(crm)
+
+    async def broken(object_name: str, ttl_seconds: int) -> str:
+        raise RuntimeError(f"signing failed for {object_name}?X-Goog-Signature=secret")
+
+    monkeypatch.setattr(storage, "download_url", broken)
+    with caplog.at_level(logging.INFO), pytest.raises(ExternalServiceError):
+        await run(runtime, final=False)
+    assert crm.writes == []
+    assert await run(runtime, final=True) == "failed"
+    assert "想定外のエラー（RuntimeError）" in crm.writes[0][3][MR.error_message]
+    logged = caplog.text + "".join(str(getattr(r, "fields", "")) for r in caplog.records)
+    assert "video.unexpected_error" in logged and "Signature" not in logged and "受注入力" not in logged
