@@ -136,7 +136,7 @@ ZohoCRM.modules.attachments.ALL
 
 動画の解析（クライアントの `features.video_analysis`。2026-11-03 追加）：録音アプリの「動画の解析」（`/app/videos.html`）で動画を選ぶ →
 ブラウザから GCS の `videos/<クライアント>/` に直接上げる → `POST /api/app/videos/analyze` → `POST /internal/video-analyze`
-（GCS に置いた動画をまとめて依頼するときは ops の `command=video` → `POST /internal/video-batch`）。Gemini が動画を 10 分ずつ読み、
+（GCS に置いた動画をまとめて依頼するときは ops の `command=video` → `POST /internal/video-batch`）。Gemini が動画を 5 分ずつ読み、
 画面・項目・操作・説明を書き出して、動画1本ごとに商談記録を作る（全文は添付ファイルにも）。動画は処理後に消す（docs/video-analysis.md）
 
 Webhook（`POST /webhooks/recall`）は署名検証 → `metadata.client_id` でクライアントを決める → Cloud Tasks に積んで即 200。

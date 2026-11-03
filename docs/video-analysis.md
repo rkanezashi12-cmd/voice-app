@@ -28,7 +28,7 @@
 2. 解析を積む（画面からは上がり終わった動画ごとに。同じ動画を 10 分以内に二重には積まない）
 3. 動画1本ごとに（`app/videos/analysis.py`）
    - 長さを ffprobe で調べる（署名付き URL。URL はログに出さない）
-   - 10 分ずつ（`VIDEO_WINDOW_SECONDS`）Gemini に `gs://` のまま読ませ、場面ごとに書き出す（`prompts/video_describe.md`）。
+   - 5 分ずつ（`VIDEO_WINDOW_SECONDS`）Gemini に `gs://` のまま読ませ、場面ごとに書き出す（`prompts/video_describe.md`）。
      前の範囲の終わりを手がかりに渡し、画面名の表記をそろえる。出力が切れたら範囲を半分にして読み直す（1 分まで）
    - 書き出したものから、要約・出てきた画面・機能・今の課題・要件の候補・確かめることを作る
      （`prompts/video_summarize.md`・`prompts/video_schema.json`）
@@ -67,12 +67,15 @@
 
 | 変数 | 既定 | 中身 |
 |---|---|---|
-| `VIDEO_WINDOW_SECONDS` | 600 | 1回に読ませる長さ（秒） |
+| `VIDEO_WINDOW_SECONDS` | 300 | 1回に読ませる長さ（秒。短いほど細かく書き出す） |
 | `GEMINI_VIDEO_FPS` | 1.0 | 1秒あたりに読むコマ数（画面の切り替えが速くて読み落とすなら上げる。費用も上がる） |
-| `GEMINI_VIDEO_MEDIA_RESOLUTION` | （空：モデルの既定） | `low` / `medium` / `high`。小さい文字が読めなければ `high` |
+| `GEMINI_VIDEO_MEDIA_RESOLUTION` | high | `low` / `medium` / `high`（空ならモデルの既定）。画面の小さい文字を読むため high。費用を下げるなら空か low |
 | `GEMINI_THINKING_VIDEO` | low | 考える量 |
 
 ## 費用
+
+2026-11-03 の1本目（約5分、モデルの既定の細かさ・10分ずつ）：入力 約2.7万トークン（1秒あたり約93）、Gemini 合計 約10円。
+書き出しが約2,000文字と薄かったので、high・5分ずつ・発言はほぼ全文に変えた（入力は数倍になる見込み。次の1本で実測する）。
 
 初回の1本で `usage` を見て実測する（映像のトークンは音声より多い。docs/unverified-apis.md の M11）。
 解析は `video_describe`（動画を読む）と `video_summarize`（まとめる）の2つの処理として集計される。
