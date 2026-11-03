@@ -9,6 +9,8 @@ const APP_HEADER = { "X-Requested-With": "meeting-notes-app" };
 const POLL_MS = 30000;
 
 let uploading = false;
+// 選んだ動画（「ファイル選択」を何度押しても足していく。同じ名前・大きさは1本にまとめる）
+let selected = [];
 let labels = { done: "完了", failed: "失敗" };
 let pollTimer = null;
 
@@ -118,11 +120,50 @@ async function uploadOne(file, force) {
   }
 }
 
+function renderSelected() {
+  const list = $("selected-list");
+  list.textContent = "";
+  for (const [i, file] of selected.entries()) {
+    const li = document.createElement("li");
+    const name = document.createElement("strong");
+    name.textContent = file.name;
+    const info = document.createElement("span");
+    info.className = "hint";
+    info.textContent = ` ${formatBytes(file.size)}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "link";
+    remove.textContent = "外す";
+    remove.addEventListener("click", () => {
+      selected.splice(i, 1);
+      renderSelected();
+    });
+    li.append(name, info, " ", remove);
+    list.append(li);
+  }
+  const total = selected.reduce((sum, f) => sum + f.size, 0);
+  $("selected-count").textContent = selected.length
+    ? `選んだ動画：${selected.length}本（合計 ${formatBytes(total)}）。続けて「ファイル選択」で足せます。`
+    : "まだ選んでいません。";
+  $("btn-upload").disabled = uploading || selected.length === 0;
+  $("btn-upload").textContent = selected.length ? `${selected.length}本をアップロードして解析` : "アップロードして解析";
+}
+
+function onSelect() {
+  for (const file of Array.from($("file-input").files || [])) {
+    if (!selected.some((f) => f.name === file.name && f.size === file.size)) selected.push(file);
+  }
+  // 同じファイルを選び直しても change が起きるように空にする（選んだものは selected に残っている）
+  $("file-input").value = "";
+  renderSelected();
+}
+
 async function onUpload() {
-  const files = Array.from($("file-input").files || []);
+  const files = selected.slice();
   if (files.length === 0 || uploading) return;
   uploading = true;
-  $("btn-upload").disabled = true;
+  selected = [];
+  renderSelected();
   $("file-input").disabled = true;
   $("upload-list").textContent = "";
   const force = $("chk-force").checked;
@@ -132,9 +173,8 @@ async function onUpload() {
     if (await uploadOne(file, force)) ok += 1;
   }
   uploading = false;
-  $("file-input").value = "";
   $("file-input").disabled = false;
-  $("btn-upload").disabled = true;
+  renderSelected();
   toast(`${files.length}本のうち${ok}本の解析を依頼しました`);
   await refresh();
 }
@@ -219,9 +259,7 @@ function showLogin(client, otherClient) {
 
 async function init() {
   const client = clientInUrl();
-  $("file-input").addEventListener("change", () => {
-    $("btn-upload").disabled = uploading || !($("file-input").files || []).length;
-  });
+  $("file-input").addEventListener("change", onSelect);
   $("btn-upload").addEventListener("click", onUpload);
   $("btn-refresh").addEventListener("click", refresh);
   window.addEventListener("beforeunload", (e) => {

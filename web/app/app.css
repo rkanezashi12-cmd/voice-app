@@ -433,7 +433,11 @@ li[data-state="failed"] strong::before {
 }
 .downloads .button {
   flex: 1;
-  text-align: center;
-  padding: 8px;
-  font-size: 0.9rem;
+  min-height: 40px;
+  padding: 6px 8px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  color: #0f3a66;
+  background: #fff;
+  border: 1px solid #0f3a66;
 }

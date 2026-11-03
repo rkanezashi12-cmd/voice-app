@@ -183,8 +183,15 @@ try {
   await shot(page, "videos-1-start");
 
   // 動画2本とメモを選んで上げる：動画は GCS に送って解析を依頼、メモは断る
-  await page.locator("#file-input").setInputFiles([video1, memo, video2]);
-  await page.waitForFunction(() => !document.getElementById("btn-upload").disabled);
+  // 「ファイル選択」を何度押しても足していける（同じ動画は1本にまとめる）。外すこともできる
+  await page.locator("#file-input").setInputFiles([video1]);
+  await page.locator("#selected-count").filter({ hasText: "選んだ動画：1本" }).waitFor();
+  await page.locator("#file-input").setInputFiles([memo, video2, video1]);
+  await page.locator("#selected-count").filter({ hasText: "選んだ動画：3本" }).waitFor();
+  assert.equal(await page.locator("#btn-upload").textContent(), "3本をアップロードして解析");
+  await page.locator("#file-input").setInputFiles([video2]);
+  await page.locator("#selected-count").filter({ hasText: "選んだ動画：3本" }).waitFor();
+  await shot(page, "videos-1b-selected");
   await page.locator("#btn-upload").click();
   await page.locator("#toast").filter({ hasText: "3本のうち2本の解析を依頼しました" }).waitFor();
   assert.deepEqual(

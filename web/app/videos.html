@@ -36,13 +36,15 @@
               「動画解析 ＜ファイル名＞」ができ、画面・項目・操作・説明を書き出した全文が添付ファイルに付きます。
             </p>
             <p class="hint">
-              mp4・mov・webm など、1本 5GB まで。何本でもまとめて選べます。アップロードが終わるまで、このページを閉じないでください。
+              mp4・mov・webm など、1本 5GB まで。何本でも選べます（ファイルを選ぶ画面で Ctrl キーを押しながらクリックするとまとめて選べます。「ファイル選択」を何度押しても足していけます）。アップロードが終わるまで、このページを閉じないでください。
               動画は解析が終わると消えます（アップロードしたまま1日たっても消えます）。
             </p>
             <div class="field">
               <label for="file-input">動画</label>
               <input id="file-input" type="file" accept="video/*,.mp4,.m4v,.mov,.webm,.avi,.mpeg,.mpg,.wmv,.3gp" multiple />
             </div>
+            <p id="selected-count" class="hint">まだ選んでいません。</p>
+            <ul id="selected-list" class="visit-list"></ul>
             <label class="check"><input id="chk-force" type="checkbox" /> 解析済みの動画（同じファイル名）もやり直す</label>
             <button id="btn-upload" type="button" class="primary block" disabled>アップロードして解析</button>
             <ul id="upload-list" class="visit-list"></ul>
