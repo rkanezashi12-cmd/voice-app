@@ -20,9 +20,10 @@ import {
 test("ハッシュから画面と日報の記録 ID を読む（知らない値は入力に戻す）", () => {
   assert.deepEqual(parseHash("#report=4928352000069063054"), { tab: "report", reportId: "4928352000069063054" });
   assert.deepEqual(parseHash("#record"), { tab: "record", reportId: null });
-  assert.deepEqual(parseHash(""), { tab: "input", reportId: null });
+  assert.deepEqual(parseHash(""), { tab: "start", reportId: null });
+  assert.deepEqual(parseHash("#input"), { tab: "input", reportId: null });
   assert.deepEqual(parseHash("#report=abc"), { tab: "report", reportId: null }, "ID は数字だけ");
-  assert.deepEqual(parseHash("#other=1"), { tab: "input", reportId: null });
+  assert.deepEqual(parseHash("#other=1"), { tab: "start", reportId: null });
 });
 
 test("ログインの失敗の理由（知らない種類は一般的な文）", () => {

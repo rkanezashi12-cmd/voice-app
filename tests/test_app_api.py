@@ -219,6 +219,24 @@ def test_create_visit_for_new_customer_keeps_name_only(logged_in: TestClient, cr
     assert data[F.name] == f"{today} 有限会社みなと鋳物（新規） 訪問"
 
 
+def test_quick_recording_needs_no_input(logged_in: TestClient, crm: FakeCrm) -> None:
+    """何も入力せずに録音：訪問先・担当者なしで商談記録を作る（送られてきた訪問先・担当者は使わない）。"""
+    crm.add("Accounts", "3001", {"Account_Name": "株式会社サンプル鋳造"})
+    res = logged_in.post(
+        "/api/app/visits",
+        json={"quick": True, "account_id": "3001", "contacts": ["田中 太郎"], "contact_ids": ["4001"]},
+        headers=WRITE_HEADERS,
+    )
+    assert res.status_code == 200
+    assert res.json()["recording_url"].startswith("/recorder/#t=")
+    [(kind, module, _, data)] = crm.writes
+    assert (kind, module) == ("create", F.module)
+    today = datetime.now(ZoneInfo("Asia/Tokyo")).date().isoformat()
+    assert data[F.name] == f"{today} {visits.QUICK_LABEL}"
+    assert F.account not in data and F.contact_name not in data and F.contacts_link not in data
+    assert data[F.owner] == {"id": "9001"} and data[F.capture_method] == "対面録音"
+
+
 @pytest.mark.parametrize(
     ("body", "status"),
     [

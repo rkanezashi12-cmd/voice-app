@@ -35,7 +35,28 @@
         <div class="panel-body"><p id="error-message"></p></div>
       </section>
 
+      <div id="tab-start" class="tab" hidden>
+        <section class="panel">
+          <h2 class="panel-head">何をしますか</h2>
+          <div class="panel-body">
+            <button id="btn-mode-meeting" type="button" class="primary block mode">
+              顧客との商談<small>訪問先・担当者を選んでから録音する</small>
+            </button>
+            <button id="btn-mode-quick" type="button" class="block mode">
+              何も入力せずに録音<small>すぐに録音を始める（訪問先はあとで CRM で入れる）</small>
+            </button>
+            <button id="btn-mode-video" type="button" class="block mode" hidden>
+              動画の解析<small>業務システムの説明動画を上げて、画面・操作・説明を書き出す</small>
+            </button>
+            <p class="hint">
+              <span id="start-user">-</span> <button id="btn-logout-start" type="button" class="link">ログアウト</button>
+            </p>
+          </div>
+        </section>
+      </div>
+
       <div id="tab-input" class="tab" hidden>
+        <p class="hint back"><a href="#start">← 最初の画面に戻る</a></p>
         <section class="panel">
           <h2 class="panel-head">訪問・商談情報</h2>
           <div class="panel-body">
@@ -46,7 +67,6 @@
               </div>
               <div><dt>GPS状態</dt><dd id="gps-state">未取得</dd></div>
             </dl>
-            <p id="link-videos" class="hint" hidden><a id="link-videos-a" href="videos.html">動画の解析（業務システムの説明動画を上げる）</a></p>
             <button id="btn-gps" type="button" class="primary block">GPSから訪問先候補を取得</button>
             <p id="gps-attribution" class="hint" hidden>位置から住所を調べるのに Google Maps を使っています</p>
           </div>
