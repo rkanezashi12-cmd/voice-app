@@ -131,10 +131,16 @@ async def test_analyzes_video_and_creates_record(
     # 1500 秒を 600 秒ずつ：0-600・600-1200・1200-1500
     calls = video_calls(llm)
     parts = [c["parts"][0] for c in calls]
-    assert [(p.start_seconds, p.end_seconds) for p in parts] == [(0, 600), (600, 1200), (1200, 1500)]
+    assert [(p.start_seconds, p.end_seconds) for p in parts] == [
+        (0, 300),
+        (300, 600),
+        (600, 900),
+        (900, 1200),
+        (1200, 1500),
+    ]
     assert all(isinstance(p, VideoPart) and p.file_uri == f"gs://bucket/{VIDEO}" for p in parts)
     assert parts[0].mime_type == "video/mp4" and parts[0].fps == 1.0
-    assert "10:00〜20:00" in calls[1]["parts"][1].text
+    assert "5:00〜10:00" in calls[1]["parts"][1].text
     # 2つ目からは、前の記録の終わりを手がかりに渡す
     assert "直前の部分の記録" not in calls[0]["parts"][1].text
     assert "直前の部分の記録" in calls[1]["parts"][1].text
@@ -152,7 +158,7 @@ async def test_analyzes_video_and_creates_record(
     assert data[MR.issues] == "・納期を Excel で別に管理している"
     assert data[MR.needs] == "・納期を一覧で見られること"
     assert data[MR.next_actions] == "・締め日はいつか"
-    assert "0:00〜10:00" in data[MR.transcript] and "20:00〜25:00" in data[MR.transcript]
+    assert "0:00〜5:00" in data[MR.transcript] and "20:00〜25:00" in data[MR.transcript]
 
     # 全文の添付と、動画の削除
     [(module, record_id, filename, content)] = crm.attachments
@@ -168,10 +174,18 @@ async def test_truncated_window_is_split_in_half(
 ) -> None:
     storage.objects[VIDEO] = b"video"
     name_search(crm)
-    llm.video_outputs = [LlmResult("途中で切れた", truncated=True), "前半", "後半", "2つ目", "3つ目"]
+    llm.video_outputs = [
+        LlmResult("途中で切れた", truncated=True),
+        "前半",
+        "後半",
+        "2つ目",
+        "3つ目",
+        "4つ目",
+        "5つ目",
+    ]
     assert await run(runtime) == "done"
     spans = [(c["parts"][0].start_seconds, c["parts"][0].end_seconds) for c in video_calls(llm)]
-    assert spans[:3] == [(0, 600), (0, 300), (300, 600)]
+    assert spans[:3] == [(0, 300), (0, 150), (150, 300)]
     text = crm.writes[0][3][MR.transcript]
     assert "途中で切れた" not in text and text.startswith("前半\n\n後半\n\n2つ目")
 

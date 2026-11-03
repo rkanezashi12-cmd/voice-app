@@ -75,9 +75,10 @@ class Settings(BaseSettings):
     # 動画の解析（docs/video-analysis.md）：考える量・読む細かさ（空ならモデルの既定。low / medium / high）・1秒あたりのコマ数・
     # 1回に読ませる長さ（秒。長い動画はこの長さずつ読む）
     gemini_thinking_video: str = "low"
-    gemini_video_media_resolution: str = ""
+    # 業務システムの画面の小さい文字を読むため、既定は high（2026-11-03。low 相当の既定では書き出しが薄かった）
+    gemini_video_media_resolution: str = "high"
     gemini_video_fps: float = 1.0
-    video_window_seconds: int = 600
+    video_window_seconds: int = 300
 
     # 対面録音を Gemini に渡す単位（秒）と、区切りを無音位置に寄せる幅（秒）
     audio_segment_seconds: int = 1200
