@@ -138,6 +138,15 @@ A8（先方担当者（連絡先）の紐づけ）も、項目を作ったあと
 - ワークフローの関数の引数 `rec_id`（文字列）に「商談記録 Id」を割り当てると、レコード ID が文字列で届く
 - `zoho.crm.getOrgVariable("<API 名>")` は、値がある変数ならその値を返す
 
+確認済み（2026-11-03 日本時間、ものづくりSFAデモ2 の動画の解析で 23 本を処理。docs/video-analysis.md）：
+
+- M11 GCS の動画を `file_data`（`gs://…`）＋ `video_metadata`（`start_offset`／`end_offset` は `"<秒>s"`）で渡すと読める。
+  同じプロジェクトのバケットは、権限を足さずに Vertex AI が読めた（.MOV・数百 MB）
+- M12 `GenerateContentConfig.media_resolution = MEDIA_RESOLUTION_HIGH` は Gemini 3.5 Flash で受け付けられた。
+  入力は 1秒あたり約 300 トークン（既定の細かさでは約 93）
+- M13 ffprobe で署名付き URL（GET）から動画の長さを読めた（全本で長さが分かった）
+- M14 COQL の `like '%…'`（後ろ一致）で、同じ動画の商談記録を探せた（解析済みの動画を飛ばした）
+
 確認済み（2026-09-30 日本時間、開始日時ありの商談記録で録音用URLを発行）：
 
 - D4 `zoho.crm.getRecordById` で読んだ日時項目（開始日時）を `toString()` してバックエンドに渡すと、タイムゾーン込みの正しい時刻として読めた。
@@ -188,10 +197,6 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 | M5 | Zoho の複数行（大）の文字数の数え方 | UTF-16 の単位で 32,000 以内に収める（多めに数える側） | `app/pipeline/formatting.py` |
 | M6 | Zoho でレコードが無いときの応答 | `GET /crm/v8/{module}/{id}` が 204（違う応答なら、録音ページの確認は録音を止めずに通す） | `app/services/crm.py`, `app/routers/recordings.py` |
 | M8 | Gemini に MP3 をインライン（`Part.from_bytes`）で渡せる大きさ | 20 分 × 32kbps ≒ 5MB（1〜2分は通った） | `app/services/audio.py` |
-| M11 | Gemini（Vertex AI）に GCS の動画を `file_data`（`gs://`）で渡すこと（2026-11-03 追加。公式ドキュメントの docs.cloud.google.com・ai.google.dev がこの環境から読めず、SDK の型だけで確認） | `Part(file_data=FileData(file_uri="gs://…", mime_type="video/mp4"), video_metadata=VideoMetadata(start_offset="600s", end_offset="1200s", fps=1.0))`。同じプロジェクトのバケットは Vertex AI のサービスエージェントが読める想定（読めなければバケットに `roles/storage.objectViewer` を足す）。オフセットは `"<秒>s"` の形。1回に読ませるのは 10 分（`VIDEO_WINDOW_SECONDS`）。映像のトークンの数え方（1秒あたり）は、初回の `usage` で実測する | `app/services/gemini.py`, `app/videos/analysis.py` |
-| M12 | `media_resolution`（`GenerateContentConfig`）の効き方 | 既定 `high`（2026-11-03 から。Gemini 3.5 Flash で受け付けられるかは次の1本で確かめる）。断られたら `GEMINI_VIDEO_MEDIA_RESOLUTION` を空にする。1本目（既定の細かさ）は入力 1秒あたり約93トークン | `app/services/gemini.py` |
-| M13 | ffprobe で署名付き URL（GCS の GET）から動画の長さを読めること | 先頭（とファイルの終わりの目次）だけを読む想定。読めなければ動画の全体を1回で読ませる（長いと出力が切れることがある） | `app/videos/analysis.py` |
-| M14 | COQL の `like '%…'`（名前の後ろ一致）で商談記録を探せること | 同じ動画の記録を探す（【TEST】の有無を問わない） | `app/videos/analysis.py` |
 | M15 | Zoho の添付ファイルの取得（`GET /crm/v8/{module}/{id}/Attachments/{attachment_id}` で中身がそのまま返る）と一覧（`GET …/Attachments?fields=id,File_Name,Size,Created_Time`）。2026-11-03 追加。一覧は接続の確認（`crm_setup.py check-access`）で実機で通っている | 動画の解析の Word（`/api/app/videos/{id}/report.docx`） | `app/services/crm.py` |
 | M9 | Cloud Tasks のタスク名による重複排除が効く期間 | 同じ名前は一定期間登録できない（期間は要確認）。処理済みのレコードは共通処理側でも止める | `app/services/tasks.py` |
 
