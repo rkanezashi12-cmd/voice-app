@@ -12,7 +12,7 @@ HOURS="${1:-24}"
 
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
-gcloud logging read "resource.type=\"cloud_run_revision\" AND (jsonPayload.message=\"gemini.generated\" OR jsonPayload.message=\"pipeline.saved\" OR jsonPayload.message=\"needs.done\" OR jsonPayload.message=\"correct.skipped\" OR jsonPayload.message=\"transcribe.split\" OR jsonPayload.message=\"transcribe.truncated_kept\")" \
+gcloud logging read "resource.type=\"cloud_run_revision\" AND (jsonPayload.message=\"gemini.generated\" OR jsonPayload.message=\"pipeline.saved\" OR jsonPayload.message=\"needs.done\" OR jsonPayload.message=\"correct.skipped\" OR jsonPayload.message=\"transcribe.split\" OR jsonPayload.message=\"transcribe.truncated_kept\" OR jsonPayload.message=\"video.done\" OR jsonPayload.message=\"video.failed\" OR jsonPayload.message=\"video.split\")" \
   --project="$PROJECT" --freshness="${HOURS}h" --limit=5000 --format=json >"$TMP"
 python3 - "$TMP" "$HOURS" <<'PY'
 import json

@@ -128,6 +128,9 @@ class FeatureFlags(_Model):
     # ボット・デスクトップ（Recall.ai の文字起こし）の補正を省く（費用を下げる。2026-10-22 ユーザーの判断）。
     # 補正は全文を書き直すので出力の費用がかかる。省いたときは、用語辞書を要約に渡して、要約の中の表記だけ直す
     skip_bot_correction: bool = False
+    # 動画の解析（docs/video-analysis.md）。GCS の videos/<クライアント>/ に置いた動画を Gemini で読み、
+    # 1本ごとに商談記録を作る（画面・操作・説明を細かく書き出したものを全文と添付ファイルに入れる）
+    video_analysis: bool = False
 
 
 class ClientConfig(_Model):

@@ -134,6 +134,10 @@ ZohoCRM.modules.attachments.ALL
 `POST /internal/needs-analyze`。商談記録・問合せからニーズを抜き出して「ニーズ」に作り、自社技術と照らした結果を「ニーズ分析」に書く
 （`app/needs/`。docs/needs-analysis.md）。共通処理には合流しない
 
+動画の解析（クライアントの `features.video_analysis`。2026-11-03 追加）：人が GCS の `videos/<クライアント>/` に動画を置く →
+ops（`command=video`）→ `POST /internal/video-batch` → 動画ごとに `POST /internal/video-analyze`。Gemini が動画を 10 分ずつ読み、
+画面・項目・操作・説明を書き出して、動画1本ごとに商談記録を作る（全文は添付ファイルにも）。動画は処理後に消す（docs/video-analysis.md）
+
 Webhook（`POST /webhooks/recall`）は署名検証 → `metadata.client_id` でクライアントを決める → Cloud Tasks に積んで即 200。
 共通処理は `POST /internal/process`（Cloud Tasks から OIDC 認証で呼ぶ）。
 
@@ -153,6 +157,7 @@ app/services/          zoho_auth / crm / recall / gemini / tasks / storage / aud
 app/visits.py          録音アプリの訪問先の検索と商談記録の作成（app/web_session.py はログインの Cookie）
 app/pipeline/          共通処理（入口非依存）
 app/needs/             ニーズ分析（monodemo。docs/needs-analysis.md）
+app/videos/            動画の解析（業務システムの説明動画 → 商談記録。docs/video-analysis.md）
 web/recorder/          対面録音ページ（素の HTML/JS。ビルド不要）
 web/app/               録音アプリ（Zoho でログイン・訪問先と担当者の選択・GPS の候補・日報。素の HTML/JS）
 prompts/               transcribe.md / correct.md / summarize.md / schema.json

@@ -208,6 +208,14 @@ class NeedsMap(_Frozen):
     values: NeedsValues = NeedsValues()
 
 
+class VideoValues(_Frozen):
+    """動画の解析（docs/video-analysis.md）で作る商談記録の値。"""
+
+    name_prefix: str = "動画解析 "  # 商談記録の名前は「動画解析 <動画のファイル名>」
+    category: str = "動画解析"
+    attachment_prefix: str = "動画解析_"  # 添付ファイルの名前は「動画解析_<動画のファイル名>.txt」
+
+
 class FieldMap(_Frozen):
     meeting_record: MeetingRecordFields = MeetingRecordFields()
     glossary: GlossaryFields = GlossaryFields()
@@ -218,6 +226,7 @@ class FieldMap(_Frozen):
     limits: TextLimits = TextLimits()
     # ニーズ分析（docs/needs-analysis.md。クライアントの features.needs_analysis が true のときだけ使う）
     needs: NeedsMap = NeedsMap()
+    video: VideoValues = VideoValues()
     # category の選択肢。空なら自由記述（Gemini の出力をそのまま入れる）。
     # 値を入れると Gemini の出力をこの中に限定し、外れた値は null にする。
     category_choices: tuple[str, ...] = ()

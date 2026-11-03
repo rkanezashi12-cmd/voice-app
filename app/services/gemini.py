@@ -38,7 +38,18 @@ class AudioPart:
     mime_type: str
 
 
-Part = TextPart | AudioPart
+@dataclass(frozen=True)
+class VideoPart:
+    """GCS に置いた動画（gs://）。start / end（秒）で一部だけ読ませる。fps は1秒あたりのコマ数（モデルの既定は 1）。"""
+
+    file_uri: str
+    mime_type: str
+    start_seconds: float | None = None
+    end_seconds: float | None = None
+    fps: float | None = None
+
+
+Part = TextPart | AudioPart | VideoPart
 
 
 @dataclass(frozen=True)
@@ -86,6 +97,7 @@ class GeminiClient:
         json_schema: dict[str, Any] | None,
         thinking_level: str = "",
         max_output_tokens: int | None = None,
+        media_resolution: str = "",
     ) -> Any:
         from google.genai import types
 
@@ -101,6 +113,9 @@ class GeminiClient:
         if json_schema is not None:
             kwargs["response_mime_type"] = "application/json"
             kwargs["response_json_schema"] = json_schema
+        if media_resolution:
+            # 動画・画像を読む細かさ（low / medium / high）。低いほど安いが、画面の小さい文字は読みにくい
+            kwargs["media_resolution"] = f"MEDIA_RESOLUTION_{media_resolution.upper()}"
         if thinking_level:
             # Gemini 3 系は thinking_level（数値の thinking_budget は使えない）
             kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=thinking_level.upper())
@@ -110,13 +125,23 @@ class GeminiClient:
     def build_contents(parts: list[Part]) -> list[Any]:
         from google.genai import types
 
-        converted = [
-            types.Part.from_text(text=p.text)
-            if isinstance(p, TextPart)
-            else types.Part.from_bytes(data=p.data, mime_type=p.mime_type)
-            for p in parts
-        ]
-        return [types.Content(role="user", parts=converted)]
+        def convert(p: Part) -> Any:
+            if isinstance(p, TextPart):
+                return types.Part.from_text(text=p.text)
+            if isinstance(p, AudioPart):
+                return types.Part.from_bytes(data=p.data, mime_type=p.mime_type)
+            meta = None
+            if p.start_seconds is not None or p.end_seconds is not None or p.fps is not None:
+                meta = types.VideoMetadata(
+                    start_offset=None if p.start_seconds is None else f"{p.start_seconds:g}s",
+                    end_offset=None if p.end_seconds is None else f"{p.end_seconds:g}s",
+                    fps=p.fps,
+                )
+            return types.Part(
+                file_data=types.FileData(file_uri=p.file_uri, mime_type=p.mime_type), video_metadata=meta
+            )
+
+        return [types.Content(role="user", parts=[convert(p) for p in parts])]
 
     async def generate(
         self,
@@ -132,7 +157,14 @@ class GeminiClient:
 
         client = self._get_client()
         thinking_level = "" if _NO_THINKING_LEVEL.match(model) else self._settings.thinking_level(task)
-        config = self.build_config(system_instruction, json_schema, thinking_level, max_output_tokens)
+        has_video = any(isinstance(p, VideoPart) for p in parts)
+        config = self.build_config(
+            system_instruction,
+            json_schema,
+            thinking_level,
+            max_output_tokens,
+            self._settings.gemini_video_media_resolution if has_video else "",
+        )
         contents = self.build_contents(parts)
         for attempt in range(MAX_ATTEMPTS):
             try:

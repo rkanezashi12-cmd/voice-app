@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     gemini_thinking_summarize: str = "low"
     # ニーズ分析（抜き出し・まとめ）。テキストだけで深い推論は要らない
     gemini_thinking_needs: str = "low"
+    # 動画の解析（docs/video-analysis.md）：考える量・読む細かさ（空ならモデルの既定。low / medium / high）・1秒あたりのコマ数・
+    # 1回に読ませる長さ（秒。長い動画はこの長さずつ読む）
+    gemini_thinking_video: str = "low"
+    gemini_video_media_resolution: str = ""
+    gemini_video_fps: float = 1.0
+    video_window_seconds: int = 600
 
     # 対面録音を Gemini に渡す単位（秒）と、区切りを無音位置に寄せる幅（秒）
     audio_segment_seconds: int = 1200
@@ -102,6 +108,7 @@ class Settings(BaseSettings):
         "gemini_thinking_correct",
         "gemini_thinking_summarize",
         "gemini_thinking_needs",
+        "gemini_thinking_video",
     )
     @classmethod
     def check_thinking_level(cls, value: str) -> str:
@@ -109,6 +116,16 @@ class Settings(BaseSettings):
         if level not in THINKING_LEVELS:
             raise ValueError(
                 "GEMINI_THINKING_* は minimal / low / medium / high のどれか（空ならモデルの既定）"
+            )
+        return level
+
+    @field_validator("gemini_video_media_resolution")
+    @classmethod
+    def check_media_resolution(cls, value: str) -> str:
+        level = value.strip().lower()
+        if level not in ("", "low", "medium", "high"):
+            raise ValueError(
+                "GEMINI_VIDEO_MEDIA_RESOLUTION は low / medium / high のどれか（空ならモデルの既定）"
             )
         return level
 
@@ -125,6 +142,8 @@ class Settings(BaseSettings):
             "summarize": self.gemini_thinking_summarize,
             "needs_extract": self.gemini_thinking_needs,
             "needs_analyze": self.gemini_thinking_needs,
+            "video_describe": self.gemini_thinking_video,
+            "video_summarize": self.gemini_thinking_video,
         }.get(task, "")
 
     def need(self, name: str) -> Any:

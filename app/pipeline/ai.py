@@ -76,6 +76,18 @@ class PromptStore:
         return json.loads(self._read("schema.json"))
 
     @cached_property
+    def video_describe(self) -> str:
+        return self._read("video_describe.md")
+
+    @cached_property
+    def video_summarize(self) -> str:
+        return self._read("video_summarize.md")
+
+    @cached_property
+    def video_schema(self) -> dict[str, Any]:
+        return json.loads(self._read("video_schema.json"))
+
+    @cached_property
     def needs_extract(self) -> str:
         return self._read("needs_extract.md")
 

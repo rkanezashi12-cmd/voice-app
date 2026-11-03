@@ -74,6 +74,27 @@ class StorageService:
     async def upload_url(self, object_name: str, content_type: str, ttl_seconds: int) -> str:
         return await asyncio.to_thread(self._sign_put, object_name, content_type, ttl_seconds)
 
+    def _sign_get(self, object_name: str, ttl_seconds: int) -> str:
+        email, token = self._signing_credentials()
+        return (
+            self._bucket()
+            .blob(object_name)
+            .generate_signed_url(
+                version="v4",
+                expiration=timedelta(seconds=ttl_seconds),
+                method="GET",
+                service_account_email=email,
+                access_token=token,
+            )
+        )
+
+    async def download_url(self, object_name: str, ttl_seconds: int) -> str:
+        """読み取り用の署名付き URL（動画の長さを ffprobe で調べるのに使う。ログに出さない）。"""
+        return await asyncio.to_thread(self._sign_get, object_name, ttl_seconds)
+
+    def gs_uri(self, object_name: str) -> str:
+        return f"gs://{self.bucket_name}/{object_name}"
+
     def _list(self, prefix: str) -> list[StoredObject]:
         blobs = self._bucket().client.list_blobs(self.bucket_name, prefix=prefix)
         return [StoredObject(b.name, int(b.size or 0), b.content_type) for b in blobs]

@@ -16,6 +16,7 @@
 #                                                                 （先に setup_zoho_connection.sh で添付の権限つきの接続にする）
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --attach-off # 全文を添付しない
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --no-bot-correct  # ボットの文字起こしの補正を省く（費用を下げる）
+#   APP_CLIENT=monodemo bash scripts/client_mode.sh --video-on   # 動画の解析を使う（docs/video-analysis.md。先にデプロイ）
 #   APP_CLIENT=monodemo bash scripts/client_mode.sh --bot-correct     # ボットの文字起こしを補正する（既定）
 #
 # 変えるのは Cloud Run の CLIENTS_CONFIG_JSON のそのクライアントの dry_run / crm_test_records / features.* だけ。
@@ -45,7 +46,7 @@ yes_no() {
   done
 }
 
-USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test | --needs-on | --needs-off | --attach-on | --attach-off | --no-bot-correct | --bot-correct]"
+USAGE="使い方: APP_CLIENT=<クライアント> bash scripts/client_mode.sh [--write | --dry-run | --live | --test | --needs-on | --needs-off | --attach-on | --attach-off | --no-bot-correct | --bot-correct | --video-on | --video-off]"
 [ -n "$APP_CLIENT" ] || fail "$USAGE"
 [[ "$APP_CLIENT" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || fail "APP_CLIENT は英小文字・数字・ハイフン（32文字まで）にしてください"
 [ $# -le 1 ] || fail "$USAGE"
@@ -63,6 +64,8 @@ case "${1:-}" in
   --attach-off) KEY=features.transcript_attachment VALUE=false LABEL="文字起こしの全文を添付しない" ;;
   --no-bot-correct) KEY=features.skip_bot_correction VALUE=true LABEL="ボットの文字起こしの補正を省く" ;;
   --bot-correct) KEY=features.skip_bot_correction VALUE=false LABEL="ボットの文字起こしを補正する" ;;
+  --video-on) KEY=features.video_analysis VALUE=true LABEL="動画の解析を使う" ;;
+  --video-off) KEY=features.video_analysis VALUE=false LABEL="動画の解析を使わない" ;;
   *) fail "$USAGE" ;;
 esac
 if [ "$APP_CLIENT" = default ] && [ -n "$KEY" ] && [ "$KEY" != features.skip_bot_correction ]; then
@@ -101,10 +104,11 @@ def describe(c: dict) -> str:
     needs = bool(features.get("needs_analysis"))
     attach = bool(features.get("transcript_attachment"))
     skip = bool(features.get("skip_bot_correction"))
+    video = bool(features.get("video_analysis"))
     return (
         f"CRM に{'書き込まない（dry_run）' if dry else '書き込む'}・【TEST】を{'付ける' if test else '付けない'}"
         f"・ニーズ分析を{'使う' if needs else '使わない'}・全文を{'添付する' if attach else '添付しない'}"
-        f"・ボットの補正を{'省く' if skip else 'する'}"
+        f"・ボットの補正を{'省く' if skip else 'する'}・動画の解析を{'使う' if video else '使わない'}"
     )
 
 
