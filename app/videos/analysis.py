@@ -61,6 +61,8 @@ STAGGER_SECONDS = 45
 # 長さを調べる署名付き URL の有効時間・ffprobe の待ち時間（秒）
 PROBE_URL_TTL = 600
 PROBE_TIMEOUT = 120
+# 録音アプリから上げる動画のファイル名（拡張子を除く）の長さの上限
+MAX_TITLE_CHARS = 80
 
 
 class VideoBatchTask(BaseModel):
@@ -146,6 +148,29 @@ async def probe_duration_url(url: str) -> float | None:
     return value if value > 0 else None
 
 
+def upload_name(client_id: str, filename: str) -> str | None:
+    """録音アプリから上げる動画の置き場所（videos/<クライアント>/<ファイル名>）。読めない形式なら None。
+
+    ファイル名は商談記録の名前に使うので残す。パスの区切り・制御文字・URL や検索を壊す文字は除く。
+    """
+    name = PurePosixPath(filename.replace("\\", "/")).name
+    name = re.sub(r"[\x00-\x1f\x7f/\\#?\[\]*'\"%]", "", name).strip()
+    stem, suffix = PurePosixPath(name).stem, PurePosixPath(name).suffix.lower()
+    if not stem or stem.startswith(".") or video_mime(name) is None:
+        return None
+    return f"{video_prefix(client_id)}{stem[:MAX_TITLE_CHARS]}{suffix}"
+
+
+async def enqueue_video(
+    rt: Any, client_id: str, object_name: str, size: int, *, force: bool = False, delay_seconds: int = 0
+) -> bool:
+    """動画1本の解析を積む。同じ動画を短い間に二重に積まない（10分ごとに名前が変わるので、やり直しは10分後から積める）。"""
+    slot = str(int(time.time() // 600))
+    name = task_name("video", client_id, object_name, str(size), slot, "force" if force else "")
+    payload = {"client_id": client_id, "object_name": object_name, "force": force}
+    return bool(await rt.tasks.enqueue(ANALYZE_PATH, payload, name=name, delay_seconds=delay_seconds))
+
+
 async def enqueue_videos(rt: Any, task: VideoBatchTask) -> int:
     """videos/<クライアント>/ に置いてある動画ごとに、解析を積む。積んだ数を返す。"""
     cs = rt.client_services(task.client_id)
@@ -157,15 +182,11 @@ async def enqueue_videos(rt: Any, task: VideoBatchTask) -> int:
     objects.sort(key=lambda o: o.name)
     if task.limit > 0:
         objects = objects[: task.limit]
-    # 同じ動画を短い間に二重に積まない（10分ごとに名前が変わるので、やり直しは10分後から積める）
-    slot = str(int(time.time() // 600))
     count = 0
     for i, obj in enumerate(objects):
-        name = task_name(
-            "video", task.client_id, obj.name, str(obj.size), slot, "force" if task.force else ""
-        )
-        payload = {"client_id": task.client_id, "object_name": obj.name, "force": task.force}
-        if await rt.tasks.enqueue(ANALYZE_PATH, payload, name=name, delay_seconds=i * STAGGER_SECONDS):
+        if await enqueue_video(
+            rt, task.client_id, obj.name, obj.size, force=task.force, delay_seconds=i * STAGGER_SECONDS
+        ):
             count += 1
     log_event(logger, "video.batch_enqueued", client_id=task.client_id, videos=len(objects), enqueued=count)
     return count

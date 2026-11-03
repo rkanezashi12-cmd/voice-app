@@ -43,6 +43,8 @@ async def me(user: AppUserDep, rt: RuntimeDep) -> dict[str, Any]:
         "user": {"id": user.user_id, "name": user.name, "email": user.email},
         "gps_available": bool(config.app and config.app.maps_api_key),
         "dry_run": cs.dry_run,
+        # 動画の解析（/app/videos.html）を使えるか
+        "video_analysis": config.features.video_analysis,
     }
 
 

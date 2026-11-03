@@ -9,12 +9,22 @@
 - 動画は GCS に置き、処理が終わったら消す（DRY_RUN のときは消さない）。置いたまま処理しなくても、バケットのライフサイクルで1日で消える
 - 動画は GitHub を通さない（リポジトリが公開のため）。Actions のログには件数・状態だけが出る
 
+## 使い方（ふだんはこれだけ。Cloud Shell も GitHub も使わない）
+
+1. 録音アプリ（`/app/`）に Zoho でログインし、「動画の解析」（`/app/videos.html`）を開く
+   （録音アプリの入力画面にリンクが出る。`features.video_analysis` が true のクライアントだけ）
+2. 動画を選んで「アップロードして解析」。動画はブラウザから GCS に直接上がり（署名付き URL。6時間有効・1本 5GB まで）、
+   上がり終わった動画から順に解析を依頼する（`POST /api/app/videos/upload-url` → GCS へ PUT → `POST /api/app/videos/analyze`）
+3. 同じ画面の「解析の状況」で、動画解析の商談記録の状態を見る（解析中があれば 30 秒ごとに更新）
+
+置き場所は `videos/<クライアント>/<ファイル名>`（ファイル名から、パスの区切り・制御文字・`#?[]*'"%` を除く）。
+
 ## 流れ
 
-1. 人が動画を GCS の `videos/<クライアント>/` に置く（Cloud Console の「ファイルをアップロード」。場所の URL は
-   Cloud Shell で `bash scripts/video_folder.sh <クライアント>`）
-2. Claude が ops（`command=video`・`client`・`count`）を動かす → `/internal/video-batch` が置いてある動画ごとに
-   `/internal/video-analyze` を積む（45 秒ずつずらす）
+1. 動画が GCS の `videos/<クライアント>/` に置かれる（上の画面から。Cloud Console から置いた動画は
+   ops（`command=video`・`client`・`count`）でまとめて依頼できる → `/internal/video-batch` が置いてある動画ごとに
+   `/internal/video-analyze` を積む（45 秒ずつずらす））
+2. 解析を積む（画面からは上がり終わった動画ごとに。同じ動画を 10 分以内に二重には積まない）
 3. 動画1本ごとに（`app/videos/analysis.py`）
    - 長さを ffprobe で調べる（署名付き URL。URL はログに出さない）
    - 10 分ずつ（`VIDEO_WINDOW_SECONDS`）Gemini に `gs://` のまま読ませ、場面ごとに書き出す（`prompts/video_describe.md`）。
