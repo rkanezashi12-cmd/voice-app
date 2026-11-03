@@ -156,13 +156,22 @@ try {
 
   // ログインしていない：録音アプリへの案内
   server.loggedIn = false;
-  await page.goto(`${server.origin}/app/videos.html`);
+  await page.goto(`${server.origin}/app/videos.html?c=monodemo`);
   await page.locator("#view-login").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#btn-login").getAttribute("href"), "/auth/login?c=monodemo");
   server.loggedIn = true;
 
+  // 別の会社のログインのまま：その会社でログインし直してもらう（別の会社の CRM に書かない）
+  await page.goto(`${server.origin}/app/videos.html?c=other`);
+  await page.locator("#view-login").waitFor({ state: "visible" });
+  assert.match(await page.locator("#login-text").textContent(), /別の会社の CRM/);
+  assert.equal(await page.locator("#btn-login").getAttribute("href"), "/auth/login?c=other");
+  assert.equal(await page.locator("#view-main").isHidden(), true);
+
   // ログイン済み：これまでの解析が見え、動画を選ぶまでボタンは押せない
-  await page.goto(`${server.origin}/app/videos.html`);
+  await page.goto(`${server.origin}/app/videos.html?c=monodemo`);
   await page.locator("#view-main").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#link-app").getAttribute("href"), "/app/?c=monodemo");
   assert.match(await page.locator("#user-name").textContent(), /ものづくりSFAデモ2 金指 営業/);
   assert.match(await page.locator("#video-list").textContent(), /00_前回の動画/);
   assert.equal(await page.locator("#btn-upload").isDisabled(), true);

@@ -176,15 +176,32 @@ async function refresh() {
     if (working) pollTimer = setTimeout(refresh, POLL_MS);
   } catch (err) {
     if (err instanceof LoginRequired) {
-      show("view-main", false);
-      show("view-login", true);
+      showLogin(clientInUrl(), false);
       return;
     }
     toast(err && err.message ? err.message : "状況を読み込めませんでした");
   }
 }
 
+// URL の会社（?c=）。録音アプリへのリンク・ログインに引き継ぐ（無ければログイン中の会社）
+function clientInUrl() {
+  const c = new URLSearchParams(window.location.search).get("c");
+  return c && /^[a-z0-9][a-z0-9-]{0,31}$/.test(c) ? c : "";
+}
+
+function showLogin(client, otherClient) {
+  show("view-loading", false);
+  show("view-main", false);
+  if (otherClient) {
+    $("login-text").textContent =
+      "別の会社の CRM にログインしています。この会社の CRM のアカウントで、ログインし直してください（Zoho に別のアカウントでログインしたままのときは、先に Zoho からログアウトしてください）。";
+  }
+  $("btn-login").href = client ? `/auth/login?c=${encodeURIComponent(client)}` : "/app/";
+  show("view-login", true);
+}
+
 async function init() {
+  const client = clientInUrl();
   $("file-input").addEventListener("change", () => {
     $("btn-upload").disabled = uploading || !($("file-input").files || []).length;
   });
@@ -197,14 +214,20 @@ async function init() {
   try {
     me = await api("/api/app/me");
   } catch (err) {
-    show("view-loading", false);
     if (err instanceof LoginRequired) {
-      show("view-login", true);
+      showLogin(client, false);
       return;
     }
+    show("view-loading", false);
     showError(err && err.message ? err.message : "読み込めませんでした。ページを再読み込みしてください。");
     return;
   }
+  // ログインの Cookie は会社をまたいで1つ。URL の会社と違う会社のログインのまま使うと、別の会社の CRM に書くので止める
+  if (client && me.client_id !== client) {
+    showLogin(client, true);
+    return;
+  }
+  $("link-app").href = `/app/?c=${encodeURIComponent(me.client_id)}`;
   show("view-loading", false);
   if (!me.video_analysis) {
     showError("この会社では動画の解析を使えません。");
