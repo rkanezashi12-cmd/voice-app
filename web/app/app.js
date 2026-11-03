@@ -85,7 +85,7 @@ function setChrome(visible) {
 }
 
 function showLogin(errorCode) {
-  for (const id of ["view-loading", "view-error", "tab-input", "tab-record", "tab-report"]) show(id, false);
+  for (const id of ["view-loading", "view-error", "tab-start", "tab-input", "tab-record", "tab-report"]) show(id, false);
   setChrome(false);
   $("btn-login").href = `/auth/login?c=${encodeURIComponent(state.client)}`;
   const message = loginErrorText(errorCode);
@@ -95,7 +95,7 @@ function showLogin(errorCode) {
 }
 
 function showError(message) {
-  for (const id of ["view-loading", "view-login", "tab-input", "tab-record", "tab-report"]) show(id, false);
+  for (const id of ["view-loading", "view-login", "tab-start", "tab-input", "tab-record", "tab-report"]) show(id, false);
   setChrome(false);
   $("error-message").textContent = message;
   show("view-error", true);
@@ -112,7 +112,9 @@ function handleError(err) {
 function route() {
   if (!state.me) return;
   const { tab, reportId } = parseHash(window.location.hash);
-  for (const name of ["input", "record", "report"]) show(`tab-${name}`, name === tab);
+  for (const name of ["start", "input", "record", "report"]) show(`tab-${name}`, name === tab);
+  // 最初の画面では、進み具合と下のタブを出さない
+  setChrome(tab !== "start");
   for (const el of document.querySelectorAll(".step")) el.classList.toggle("active", el.dataset.step === tab);
   for (const el of document.querySelectorAll(".tabbar a")) el.classList.toggle("active", el.dataset.tab === tab);
   stopPolling();
@@ -386,22 +388,11 @@ function renderRecord() {
   $("btn-open-recorder").disabled = !sel;
 }
 
-async function onOpenRecorder() {
-  const sel = state.selected;
-  if (!sel) return;
-  const btn = $("btn-open-recorder");
+// 商談記録を作って、録音ページを開く
+async function startRecording(btn, body) {
   btn.disabled = true;
   try {
-    const data = await api("/api/app/visits", {
-      method: "POST",
-      body: {
-        account_id: sel.newCustomer ? null : sel.id,
-        account_name: sel.name,
-        new_customer: Boolean(sel.newCustomer),
-        contacts: state.contacts,
-        contact_ids: sel.newCustomer ? [] : state.contactIds,
-      },
-    });
+    const data = await api("/api/app/visits", { method: "POST", body });
     try {
       window.sessionStorage.setItem(LAST_RECORD_KEY, data.record_id);
     } catch {
@@ -413,6 +404,23 @@ async function onOpenRecorder() {
     handleError(err);
     btn.disabled = false;
   }
+}
+
+async function onOpenRecorder() {
+  const sel = state.selected;
+  if (!sel) return;
+  await startRecording($("btn-open-recorder"), {
+    account_id: sel.newCustomer ? null : sel.id,
+    account_name: sel.name,
+    new_customer: Boolean(sel.newCustomer),
+    contacts: state.contacts,
+    contact_ids: sel.newCustomer ? [] : state.contactIds,
+  });
+}
+
+// 何も入力せずに録音（訪問先・担当者なし。処理が終わると状態は「取引先未設定」で、訪問先はあとで CRM で入れる）
+async function onQuickRecord() {
+  await startRecording($("btn-mode-quick"), { quick: true });
 }
 
 // ---- 日報 ----
@@ -534,6 +542,14 @@ function wireEvents() {
   });
   $("btn-open-recorder").addEventListener("click", onOpenRecorder);
   $("btn-logout").addEventListener("click", onLogout);
+  $("btn-logout-start").addEventListener("click", onLogout);
+  $("btn-mode-meeting").addEventListener("click", () => {
+    window.location.hash = "#input";
+  });
+  $("btn-mode-quick").addEventListener("click", onQuickRecord);
+  $("btn-mode-video").addEventListener("click", () => {
+    window.location.href = `videos.html?c=${encodeURIComponent(state.client)}`;
+  });
   window.addEventListener("hashchange", route);
 }
 
@@ -566,8 +582,8 @@ async function init() {
   show("view-loading", false);
   setChrome(true);
   $("user-name").textContent = state.me.user.name || state.me.user.email || "-";
-  $("link-videos").hidden = !state.me.video_analysis;
-  $("link-videos-a").href = `videos.html?c=${encodeURIComponent(state.client)}`;
+  $("start-user").textContent = state.me.user.name || state.me.user.email || "-";
+  show("btn-mode-video", Boolean(state.me.video_analysis));
   if (!state.me.gps_available) {
     $("btn-gps").disabled = true;
     setGpsState("使えません（地図のキーが未設定）");

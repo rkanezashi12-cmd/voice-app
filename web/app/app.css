@@ -408,3 +408,21 @@ li[data-state="failed"] strong::before {
   content: "✕ ";
   color: #b42318;
 }
+
+/* 最初の画面（何をしますか） */
+.mode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 12px;
+  text-align: left;
+}
+.mode small {
+  font-size: 0.8rem;
+  font-weight: normal;
+  opacity: 0.85;
+}
+.back {
+  margin: 0 0 8px;
+}

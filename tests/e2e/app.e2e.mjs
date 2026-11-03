@@ -54,6 +54,7 @@ const CONTACTS = {
 class MockServer {
   constructor() {
     this.loggedIn = true;
+    this.videoAnalysis = false;
     this.visits = [];
     this.detailCalls = 0;
     this.headers = [];
@@ -138,6 +139,7 @@ class MockServer {
           user: { id: "9001", name: "金指 営業", email: "sales@example.com" },
           gps_available: true,
           dry_run: false,
+          video_analysis: this.videoAnalysis,
         });
       }
       if (p === "/api/app/accounts/nearby") {
@@ -166,7 +168,7 @@ class MockServer {
             status: "完了",
             state: "done",
             account: v.body.account_name,
-            contacts: v.body.contacts.join("、"),
+            contacts: (v.body.contacts || []).join("、"),
             start_at: "2026-10-01T10:05:00+09:00",
           })),
         });
@@ -251,8 +253,37 @@ await run("URL の会社と違う会社のログインのままなら、ログ�
   assert.equal(await page.locator("#tab-input").isVisible(), false, "入力画面は出さない");
 });
 
+await run("最初の画面で、顧客との商談・何も入力せずに録音・動画の解析を選ぶ", async (page) => {
+  await page.goto(`${server.origin}/app/`);
+  await page.locator("#tab-start").waitFor();
+  assert.equal(await page.locator("#start-user").textContent(), "金指 営業");
+  assert.equal(await page.locator(".tabbar").isHidden(), true, "最初の画面では下のタブを出さない");
+  assert.equal(await page.locator("#btn-mode-video").isHidden(), true, "動画の解析を使わない会社には出さない");
+  await shot(page, "00-start");
+  // 動画の解析を使う会社には出し、押すと動画の画面（会社つき）へ
+  server.videoAnalysis = true;
+  await page.reload();
+  await page.locator("#btn-mode-video").waitFor();
+  await page.click("#btn-mode-video");
+  await page.waitForURL(/\/app\/videos\.html\?c=default$/);
+  server.videoAnalysis = false;
+  // 何も入力せずに録音：訪問先なしで記録を作り、すぐに録音画面へ
+  await page.goto(`${server.origin}/app/`);
+  await page.locator("#tab-start").waitFor();
+  await page.click("#btn-mode-quick");
+  await page.waitForURL(/\/recorder\/#t=.*&app=1/);
+  assert.deepEqual(server.visits.at(-1).body, { quick: true });
+  // 入力画面から最初の画面に戻れる
+  await page.goto(`${server.origin}/app/#input`);
+  await page.locator("#tab-input").waitFor();
+  await page.click("a[href='#start']");
+  await page.locator("#tab-start").waitFor();
+});
+
 await run("GPS の候補 → 担当者を複数選択・追加 → 録音画面へ引き継ぐ", async (page) => {
   await page.goto(`${server.origin}/app/`);
+  await page.locator("#tab-start").waitFor();
+  await page.click("#btn-mode-meeting");
   await page.locator("#tab-input").waitFor();
   assert.equal(await page.locator("#user-name").textContent(), "金指 営業");
   assert.equal(await page.locator("#btn-contacts").isDisabled(), true, "訪問先を選ぶまで担当者は選べない");

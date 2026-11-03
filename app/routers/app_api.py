@@ -94,6 +94,8 @@ class VisitRequest(BaseModel):
     # 新規顧客の会社名（既存の顧客企業を選んだときは CRM の名前を使う）
     account_name: Annotated[str, Field(max_length=100)] = ""
     new_customer: bool = False
+    # 何も入力せずに録音（訪問先・担当者なし）。処理が終わると状態は「取引先未設定」になり、訪問先はあとで CRM で入れる
+    quick: bool = False
     # 選んだ担当者の名前（CRM の連絡先の名前と、手で足した名前）
     contacts: Annotated[
         list[Annotated[str, Field(min_length=1, max_length=60)]], Field(max_length=MAX_CONTACTS)
@@ -122,7 +124,10 @@ async def create_visit(body: VisitRequest, user: AppUserDep, rt: RuntimeDep) -> 
     fm = cs.field_map
     crm = await cs.crm()
     account_name = body.account_name.strip()
-    if body.new_customer:
+    names: tuple[str, ...] = tuple(dict.fromkeys(n.strip() for n in body.contacts if n.strip()))
+    if body.quick:
+        account_id, account_name, names = None, "", ()
+    elif body.new_customer:
         if not account_name:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "新規顧客の会社名を入れてください")
         account_id = None
@@ -134,7 +139,6 @@ async def create_visit(body: VisitRequest, user: AppUserDep, rt: RuntimeDep) -> 
             raise HTTPException(status.HTTP_404_NOT_FOUND, "顧客企業が見つかりません")
         account_id = body.account_id
         account_name = str(account.get(fm.standard.account_name) or account_name)
-    names = tuple(dict.fromkeys(n.strip() for n in body.contacts if n.strip()))
     # 紐づけるのは、その顧客企業の連絡先だと確かめられた人だけ
     contact_ids: tuple[str, ...] = ()
     if account_id and body.contact_ids:
@@ -146,9 +150,10 @@ async def create_visit(body: VisitRequest, user: AppUserDep, rt: RuntimeDep) -> 
         owner_id=user.user_id,
         account_id=account_id,
         account_name=account_name,
-        new_customer=body.new_customer,
+        new_customer=body.new_customer and not body.quick,
         contacts=names,
         contact_ids=contact_ids,
+        quick=body.quick,
     )
     module = fm.meeting_record.module
     linked = len(contact_ids) if link_field else 0
@@ -189,6 +194,7 @@ async def create_visit(body: VisitRequest, user: AppUserDep, rt: RuntimeDep) -> 
         user_id=user.user_id,
         record_id=record_id,
         new_customer=body.new_customer,
+        quick=body.quick,
         contacts=len(names),
         linked_contacts=linked,
         dry_run=crm.dry_run,

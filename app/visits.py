@@ -215,6 +215,10 @@ async def find_contacts_link_field(crm: CrmService, fm: FieldMap) -> str | None:
     return None
 
 
+# 何も入力せずに録音したときの商談記録の名前（日付のあと）
+QUICK_LABEL = "録音（訪問先未入力）"
+
+
 @dataclass(frozen=True)
 class NewVisit:
     owner_id: str
@@ -224,6 +228,8 @@ class NewVisit:
     contacts: tuple[str, ...]
     # 選んだ担当者のうち CRM の連絡先の ID（訪問先の連絡先だと確かめたもの）
     contact_ids: tuple[str, ...] = ()
+    # 何も入力せずに録音（訪問先・担当者なし）
+    quick: bool = False
 
 
 def visit_record(
@@ -234,7 +240,10 @@ def visit_record(
     link_field（中間モジュールの連絡先のルックアップ）が分かっていれば、選んだ連絡先を先方担当者（連絡先）に紐づける。
     """
     f = fm.meeting_record
-    label = f"{visit.account_name}{'（新規）' if visit.new_customer else ''} 訪問"
+    if visit.quick:
+        label = QUICK_LABEL
+    else:
+        label = f"{visit.account_name}{'（新規）' if visit.new_customer else ''} 訪問"
     data: dict[str, Any] = {
         f.name: fmt.record_name(now.date(), label, fm),
         f.owner: {"id": visit.owner_id},

@@ -1,12 +1,13 @@
 // 録音アプリ（/app/）の表示用の純粋な関数（DOM を触らない。tests/js/app-view.test.mjs で検査する）。
 
-export const TABS = ["input", "record", "report"];
+// start：最初の画面（顧客との商談・何も入力せずに録音・動画の解析を選ぶ）
+export const TABS = ["start", "input", "record", "report"];
 
-// "#report=123" → { tab: "report", reportId: "123" }。知らない値は入力に戻す
+// "#report=123" → { tab: "report", reportId: "123" }。無い・知らない値は最初の画面に戻す
 export function parseHash(hash) {
   const raw = String(hash || "").replace(/^#/, "");
   const [name, value] = raw.split("=", 2);
-  const tab = TABS.includes(name) ? name : "input";
+  const tab = TABS.includes(name) ? name : "start";
   const reportId = tab === "report" && value && /^[0-9]{1,30}$/.test(value) ? value : null;
   return { tab, reportId };
 }
