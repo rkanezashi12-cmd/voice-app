@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 2つ目以降のクライアントだけ、CRM に書き込むか（dry_run）・商談記録の名前に【TEST】を付けるか（crm_test_records）を切り替える
 # （Cloud Shell で実行する想定）。default（マルサン木型）はサービス全体の DRY_RUN・CRM_TEST_RECORDS のままで、このスクリプトでは変えない。
-# default で使えるのは、今の状態の表示と、ボットの補正の切り替え（--no-bot-correct / --bot-correct）だけ（2026-10-25）:
+# default で使えるのは、今の状態の表示と、ボットの補正（--no-bot-correct / --bot-correct。2026-10-25）・
+# 全文の添付（--attach-on / --attach-off。2026-11-10。先に setup_zoho_connection.sh で添付の権限つきの接続にする）の切り替えだけ:
 #   bash scripts/marusan_snapshot.sh save && APP_CLIENT=default bash scripts/client_mode.sh --no-bot-correct
 #   bash scripts/marusan_snapshot.sh save   # わざと変えたので控えを取り直す（取り直さないと次の check で違いが出る）
 #
@@ -68,8 +69,9 @@ case "${1:-}" in
   --video-off) KEY=features.video_analysis VALUE=false LABEL="動画の解析を使わない" ;;
   *) fail "$USAGE" ;;
 esac
-if [ "$APP_CLIENT" = default ] && [ -n "$KEY" ] && [ "$KEY" != features.skip_bot_correction ]; then
-  fail "default（マルサン木型）はサービス全体の設定のままにします（このスクリプトで変えられるのはボットの補正だけ。本番運用は scripts/go_live.sh）"
+if [ "$APP_CLIENT" = default ] && [ -n "$KEY" ] &&
+  [ "$KEY" != features.skip_bot_correction ] && [ "$KEY" != features.transcript_attachment ]; then
+  fail "default（マルサン木型）はサービス全体の設定のままにします（このスクリプトで変えられるのはボットの補正と全文の添付だけ。本番運用は scripts/go_live.sh）"
 fi
 
 gcloud config set project "$PROJECT" >/dev/null
