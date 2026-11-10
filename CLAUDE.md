@@ -20,7 +20,7 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
   `metadata.client_id` で振り分ける（`app/routers/webhooks.py`。署名が合うクライアントに限る）。同じアカウントに送り先を足さない
 - `DRY_RUN`・`CRM_TEST_RECORDS` はサービス全体の設定で、クライアントごとに `dry_run`・`crm_test_records` で上書きできる
   （`default` は上書きしない。ほかのクライアントは `scripts/client_mode.sh` で切り替える。`default` で `client_mode.sh` が
-  変えられるのはボットの補正（`--no-bot-correct` / `--bot-correct`）だけ）
+  変えられるのはボットの補正（`--no-bot-correct` / `--bot-correct`）と全文の添付（`--attach-on` / `--attach-off`。2026-11-10）だけ）
 - ほかのクライアントの作業では、前後で `scripts/marusan_snapshot.sh save` / `check` を実行し、`default` の設定・シークレットの版・
   DRY_RUN が変わっていないことを確かめる（読み取りだけ）
 - マルサン木型（`default`）の作業は、これまでどおり `APP_CLIENT` を付けずにスクリプトを実行する（`go_live.sh` もサービス全体＝マルサン木型）。
@@ -109,7 +109,8 @@ ZohoCRM.modules.attachments.ALL
 ```
 
 `ZohoCRM.modules.attachments.ALL` は全文の添付ファイル（クライアントの `features.transcript_attachment`）に使う（2026-10-19 追加）。
-これより前に発行した接続（マルサン木型の今の接続）には無い。添付を使うクライアントだけ、`setup_zoho_connection.sh` で発行し直す。
+これより前に発行した接続には無い。添付を使うクライアントだけ、`setup_zoho_connection.sh` で発行し直す
+（マルサン木型は 2026-11-10 にユーザーの指示で添付を使うことにした。手順は docs/zoho-connection.md の「マルサン木型で使う」）。
 
 `ZohoCRM.org.READ` は接続先の組織の確認に使う（読み取りのみ）。発行・保存は `scripts/setup_zoho_connection.sh`（手順は docs/zoho-connection.md）。
 

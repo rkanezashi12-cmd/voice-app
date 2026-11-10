@@ -735,25 +735,28 @@ def test_client_mode_turns_features_on(recall_sim: Path, arg: str, key: str) -> 
     assert mono["features"] == {key: True}
 
 
-def test_client_mode_can_skip_bot_correction_for_default_only(recall_sim: Path) -> None:
-    """マルサン木型（default）で変えられるのはボットの補正だけ（2026-10-25）。monodemo は変えない。"""
+@pytest.mark.parametrize(
+    ("arg", "key"), [("--no-bot-correct", "skip_bot_correction"), ("--attach-on", "transcript_attachment")]
+)
+def test_client_mode_changes_allowed_features_for_default(recall_sim: Path, arg: str, key: str) -> None:
+    """マルサン木型（default）で変えられるのはボットの補正（2026-10-25）と全文の添付（2026-11-10）だけ。monodemo は変えない。"""
     res = _run_script(
         recall_sim,
         "client_mode.sh",
         ["yes"],
         _two_clients(),
         proc_env={"APP_CLIENT": "default"},
-        args=("--no-bot-correct",),
+        args=(arg,),
     )
     assert res.returncode == 0, res.stderr
     deployed = _deployed_config(recall_sim)
-    assert deployed["clients"]["default"] == {**MARUSAN, "features": {"skip_bot_correction": True}}
+    assert deployed["clients"]["default"] == {**MARUSAN, "features": {key: True}}
     assert deployed["clients"]["monodemo"] == MONODEMO
     assert _saved(recall_sim) == [], "シークレットは保存し直さない"
     ClientRegistry.from_dict(deployed)
 
 
-@pytest.mark.parametrize("arg", ["--write", "--dry-run", "--live", "--test", "--needs-on", "--attach-on"])
+@pytest.mark.parametrize("arg", ["--write", "--dry-run", "--live", "--test", "--needs-on", "--video-on"])
 def test_client_mode_refuses_other_settings_for_default(recall_sim: Path, arg: str) -> None:
     res = _run_script(
         recall_sim, "client_mode.sh", ["yes"], _two_clients(), proc_env={"APP_CLIENT": "default"}, args=(arg,)

@@ -48,7 +48,7 @@
 - 処理をやり直すと（`scripts/reprocess.sh`）、添付がもう1つ増える（バックエンドは消さない。要らない方は CRM の画面で消す）
 - CRM の接続に `ZohoCRM.modules.attachments.ALL` が要る。**2026-10-19 より前に発行した接続には無い**ので、使うクライアントだけ発行し直す
 
-使い始める手順（例：monodemo。**マルサン木型（default）で使うときは、マルサン木型の接続を発行し直すことになるので、ユーザーの指示で行う**）
+使い始める手順（例：monodemo。マルサン木型は下の「マルサン木型（default）で使う」）
 
 1. コードを入れる：`cd ~/voice-app && git checkout claude/meeting-transcription-app-setup-nkaz1m && git pull && bash scripts/marusan_snapshot.sh save && bash scripts/deploy.sh`
    （**デプロイより先に手順3を実行しない。** 古いコードは `transcript_attachment` を知らず、新しい版が起動に失敗する）
@@ -58,6 +58,33 @@
 3. 添付を使う：`APP_CLIENT=monodemo bash scripts/client_mode.sh --attach-on`（yes）
 4. `bash scripts/marusan_snapshot.sh check` で、マルサン木型が変わっていないことを確かめる
 5. 短い録音を1件処理し、商談記録の「添付ファイル」に `文字起こし全文_….txt` ができていることを確かめる
+
+### マルサン木型（default）で使う（2026-11-10 ユーザーの指示）
+
+マルサン木型の今の接続（2026-10-19 より前に発行）には添付の権限が無いので、接続を発行し直してから添付を使う。
+コードは全クライアント共通でデプロイ済みなので、デプロイは要らない。
+
+1. 接続を発行し直す（Cloud Shell。マルサン木型の CRM の管理者アカウントで、**今使っている Self Client** の Client ID / Secret を使う）
+
+   ```bash
+   cd ~/voice-app && git checkout claude/meeting-transcription-app-setup-nkaz1m && git pull && bash scripts/marusan_snapshot.sh save
+   ```
+   ```bash
+   ORG_ID=4928352000000020005 bash scripts/setup_zoho_connection.sh
+   ```
+
+   - 認可コードは、スクリプトが表示する10個のスコープで発行する。組織は「株式会社マルサン木型製作所」を選ぶ
+     （`ORG_ID` を付けておくと、違う組織なら何も保存せずに止まる）
+   - 権限の確認に「商談記録の添付ファイルの一覧」が出て OK なら、添付の権限も通っている。NG なら何も保存せずに止まる
+     （今の接続はそのまま使われ続ける）
+2. `bash scripts/marusan_snapshot.sh check` を実行する。違いが `zoho-client-id` / `zoho-client-secret` / `zoho-refresh-token` の版だけなら、
+   わざと変えたものなので `bash scripts/marusan_snapshot.sh save` で控えを取り直す
+3. 添付を使う：Cloud Shell で `APP_CLIENT=default bash scripts/client_mode.sh --attach-on`（yes）、
+   または ops（`command=client-mode`・`client=default`・`option=--attach-on`）。そのあと `marusan_snapshot.sh save`
+4. 短い録音を1件処理し、商談記録の「添付ファイル」に `文字起こし全文_….txt` ができていることを確かめる
+   （添付に失敗しても日報は「完了」のまま。ログに `transcript.attachment_failed`）
+
+やめるときは `--attach-off`。接続は発行し直したままでよい（添付の権限があるだけで、使わなければ何もしない）。
 
 ## うまくいかないとき
 
