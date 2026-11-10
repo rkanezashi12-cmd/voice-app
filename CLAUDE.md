@@ -53,6 +53,13 @@ Gemini で補正・要約して Zoho CRM に蓄積する。中小製造業の営
     Claude が `actions_run_trigger` で起動してログを読む。**リポジトリは公開なので、Actions のログには件数・状態だけを出す**
   - GCP の構築・デプロイの前に、スキル gcp-bootstrap を読む（正本 rkanezashi12-cmd/claude-skills の skills/gcp-bootstrap/SKILL.md。
     スキル一覧に無ければ add_repo して読む）。新しく確かめたことはスキルに追記して push する
+  - **Cloud Shell をユーザーにお願いしない**（2026-11-10 ユーザーの指示。ほかの案件と同じ）。デプロイ・クライアントの設定・再処理・
+    費用やログの確認は、Claude が ops で行う。マルサン木型の控え（`marusan_snapshot.sh`）も ops が前後で取る。
+    例外は鍵の値を入れる作業だけ（Zoho の Self Client の Secret・認可コード、Recall.ai の API キーなど。`setup_zoho_connection.sh`・
+    `crm_setup.py`・`setup_recall.sh`・`setup_app_login.sh`）：リポジトリが公開で Actions の入力も見えるので、値は Cloud Shell で入れてもらう
+  - **PR は Claude が作り、CI（test）が通ったら Claude がマージする**（2026-11-10 ユーザーの指示）。アプリのコードが変わったら、
+    続けて ops の deploy まで行い、結果を伝える。ただしマルサン木型（default）の設定を変える ops（`client-mode` の default など）は、
+    ユーザーの指示があるときだけ
 
 ## 2. 絶対ルール
 
