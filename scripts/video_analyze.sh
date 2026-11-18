@@ -8,9 +8,9 @@
 # 出すのは件数と状態だけ（動画のファイル名は出さない。GitHub Actions のログは公開されるため）。
 set -euo pipefail
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-SERVICE="meeting-notes"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source "$(dirname "$0")/lib/env.sh"
 CLIENT_ID="${CLIENT_ID:-}"
 LIMIT="${1:-0}"
 FORCE_JSON=false

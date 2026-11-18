@@ -4,7 +4,9 @@
 #   bash scripts/test_results.sh                 # 直近 2 日の全テストの結果（完了・中断時の診断まとめ）
 #   bash scripts/test_results.sh android-1       # 記録 ID を指定すると、その記録のイベントを時系列で全部出す
 set -euo pipefail
-PROJECT="${PROJECT:-voice-ai-510014}"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source "$(dirname "$0")/lib/env.sh"
 BASE='resource.type="cloud_run_revision" AND jsonPayload.message="recorder.event"'
 
 if [[ $# -eq 0 ]]; then

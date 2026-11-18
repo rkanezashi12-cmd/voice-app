@@ -10,7 +10,7 @@
 
 使い方:
   export RECORDING_TOKEN_SECRET="$(gcloud secrets versions access latest \\
-      --secret=recording-token-secret --project=voice-ai-510014)"
+      --secret=recording-token-secret --project=<プロジェクト ID>)"
   python3 scripts/issue_test_url.py --service-url https://<Cloud Run の URL>
   python3 scripts/issue_test_url.py --service-url https://<Cloud Run の URL> --record-id <商談記録の ID> --process
 

@@ -7,9 +7,9 @@
 #   FORCE=1 bash scripts/reprocess.sh <ID>   # 「完了」の記録もやり直す（全文を添付し直すときなど。日報は書き直される）
 set -euo pipefail
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-SERVICE="meeting-notes"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source "$(dirname "$0")/lib/env.sh"
 RECORD_ID="${1:-}"
 CLIENT_ID="${CLIENT_ID:-default}"
 FORCE_JSON=false

@@ -15,16 +15,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-REPO="${GITHUB_REPO:-rkanezashi12-cmd/voice-app}"
-BRANCH="${GITHUB_BRANCH:-claude/meeting-transcription-app-setup-nkaz1m}"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source scripts/lib/env.sh
+# リポジトリと既定のブランチも deploy/ops.env から（SOURCE_REPO・SOURCE_BRANCH。GitHub Actions では GITHUB_ で始まる名前を使えない）
+REPO="${SOURCE_REPO:-}"
+BRANCH="${SOURCE_BRANCH:-}"
+[ -n "$REPO" ] && [ -n "$BRANCH" ] || {
+  printf 'エラー: deploy/ops.env の SOURCE_REPO・SOURCE_BRANCH を入れてください\n' >&2
+  exit 1
+}
 POOL="github"
 PROVIDER="github"
-DEPLOYER="meeting-notes-deployer"
+DEPLOYER="${SERVICE}-deployer"
 DEPLOYER_SA="${DEPLOYER}@${PROJECT}.iam.gserviceaccount.com"
-RUN_SA="meeting-notes-run@${PROJECT}.iam.gserviceaccount.com"
-TASKS_SA="meeting-notes-tasks@${PROJECT}.iam.gserviceaccount.com"
 AR_REPO="cloud-run-source-deploy"
 
 step() { printf '\n==== %s\n' "$*"; }

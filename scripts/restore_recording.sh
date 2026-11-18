@@ -7,9 +7,9 @@
 #   save_recording.sh が ffmpeg なしで作った ZIP（<ID>-raw.zip）も渡せる。分割された元のファイルを、元の名前のまま戻す
 set -euo pipefail
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-SERVICE="meeting-notes"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source "$(dirname "$0")/lib/env.sh"
 CLIENT_ID="${1:-}"
 RECORD_ID="${2:-}"
 fail() {

@@ -16,10 +16,9 @@ cd "$(dirname "$0")/.."
 # Ctrl+Z（一時停止）を効かなくする。「元に戻す」のつもりで押すと、スクリプトが止まったままになって分かりにくいため
 trap '' TSTP
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-SERVICE="meeting-notes"
-RUN_SA="meeting-notes-run@${PROJECT}.iam.gserviceaccount.com"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source scripts/lib/env.sh
 APP_CLIENT="${APP_CLIENT:-}"
 DISPLAY_NAME="${DISPLAY_NAME:-}"
 CLIENT_TZ="${CLIENT_TZ:-Asia/Tokyo}"

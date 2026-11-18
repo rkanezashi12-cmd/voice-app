@@ -16,10 +16,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-SERVICE="meeting-notes"
-RUN_SA="meeting-notes-run@${PROJECT}.iam.gserviceaccount.com"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source scripts/lib/env.sh
 APP_CLIENT="${APP_CLIENT:-default}" # クライアント設定のキー
 DC="${DC:-us}"                      # Zoho の DC（マルサン木型・ものづくりSFAデモ2 は us）
 ORG_ID="${ORG_ID:-}"                # 接続先の組織 ID（default 以外は必須。違う組織なら止まる）

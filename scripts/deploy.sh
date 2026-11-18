@@ -9,10 +9,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-SERVICE="meeting-notes"
-RUN_SA="meeting-notes-run@${PROJECT}.iam.gserviceaccount.com"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source scripts/lib/env.sh
 fail() {
   printf 'エラー: %s\n' "$*" >&2
   exit 1
