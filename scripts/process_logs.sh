@@ -9,7 +9,9 @@
 #   bash scripts/process_logs.sh          # 直近 60 分
 #   bash scripts/process_logs.sh 180      # 直近 180 分
 set -euo pipefail
-PROJECT="${PROJECT:-voice-ai-510014}"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source "$(dirname "$0")/lib/env.sh"
 MINUTES="${1:-60}"
 EVENTS=(
   # 入口B：対面録音

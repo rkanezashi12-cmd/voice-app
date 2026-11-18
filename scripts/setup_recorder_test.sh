@@ -13,11 +13,10 @@
 #   6. テスト用の録音 URL を発行（CRM に書かない・文字起こしもしないテスト用）
 set -euo pipefail
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source "$(dirname "$0")/lib/env.sh"
 BUCKET="${PROJECT}-meeting-audio"
-SERVICE="meeting-notes"
-RUN_SA="meeting-notes-run@${PROJECT}.iam.gserviceaccount.com"
 SECRETS=(backend-api-key recording-token-secret)
 
 step() { printf '\n==== %s\n' "$*"; }

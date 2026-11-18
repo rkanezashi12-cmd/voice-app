@@ -6,7 +6,9 @@
 #
 # 単価は 2026-10 の請求の実績（100万トークンあたり 入力 約260円・出力 約1,550円。考えた分は出力として課金）。
 set -euo pipefail
-PROJECT="${PROJECT:-voice-ai-510014}"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source "$(dirname "$0")/lib/env.sh"
 HOURS="${1:-24}"
 [[ "$HOURS" =~ ^[0-9]{1,4}$ ]] || { echo "使い方: bash scripts/usage_report.sh [時間]" >&2; exit 1; }
 

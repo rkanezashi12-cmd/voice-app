@@ -14,9 +14,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-SERVICE="meeting-notes"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source scripts/lib/env.sh
 APP_CLIENT="${APP_CLIENT:-default}"
 [[ "$APP_CLIENT" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || {
   echo "エラー: APP_CLIENT は英小文字・数字・ハイフン（32文字まで）にしてください" >&2

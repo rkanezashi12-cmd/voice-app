@@ -13,8 +13,9 @@ cd "$(dirname "$0")/.."
 # Ctrl+Z（一時停止）を効かなくする。「元に戻す」のつもりで押すと、スクリプトが止まったままになって分かりにくいため
 trap '' TSTP
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source scripts/lib/env.sh
 # gcloud run deploy --source（scripts/deploy.sh）が作るリポジトリ
 REPO="${REPO:-cloud-run-source-deploy}"
 KEEP_VERSIONS="${KEEP_VERSIONS:-5}"

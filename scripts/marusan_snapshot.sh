@@ -13,9 +13,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PROJECT="${PROJECT:-voice-ai-510014}"
-REGION="asia-northeast1"
-SERVICE="meeting-notes"
+# 接続先の GCP（PROJECT・REGION・SERVICE・RUN_SA・TASKS_SA）は deploy/ops.env から読む
+# shellcheck source=scripts/lib/env.sh
+source scripts/lib/env.sh
 SNAPSHOT="${SNAPSHOT:-$HOME/marusan-snapshot.json}"
 SECRETS=(backend-api-key recording-token-secret zoho-client-id zoho-client-secret zoho-refresh-token
   recall-api-key recall-webhook-secret app-login-client-id app-login-client-secret app-session-secret app-maps-api-key)
