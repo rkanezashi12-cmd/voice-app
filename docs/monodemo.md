@@ -286,3 +286,6 @@ ZIP はマルサン木型と同じもの（項目の API 名が同じため）�
 - 2026-10-18：手順9（ボット）。`setup_recall.sh` で default と同じ Recall.ai のアカウントを参照（送り先は足していない）。関数
   `create_bot`・ワークフロー「ボットの予約」を作り、Google Meet の「【TEST】ボットの確認」で、Recall ID が入り、会議のあとに要約・課題・
   ニーズ・文字起こし全文が商談記録に書かれた（共有アカウントの通知が `metadata.client_id` で monodemo に振り分けられた）
+- 2026-11-20：会議パスコードの項目（`Meeting_Passcode`「会議パスコード」、1行 100文字）を作成（ユーザーの依頼。Zoho CRM のコネクタで
+  組織（`monodemo2` / `6719392000000020005`）を確かめてから `createFields`。商談記録は新しく作ったモジュール）。関数 `create_bot` は
+  10-18 の版（パスコード対応の前）なので、[crm/create_bot.dg](../crm/create_bot.dg) に貼り替えてもらう（docs/crm-setup.md の手順8の 4）
