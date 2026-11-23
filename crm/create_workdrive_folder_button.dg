@@ -1,0 +1,241 @@
+string button.create_workdrive_folder_button(String deal_id)
+{
+	// 商談の画面のボタン「フォルダを作成」から呼ぶ（2026-11-23 ユーザーの指示）。押すと、WorkDrive に「顧客企業のフォルダ」と、
+	// その下の「商談のフォルダ」を作り、商談のフォルダの URL を商談の項目「WorkDriveフォルダ」に書いて、フォルダを新しいタブで開く。
+	// 処理はワークフロー用の crm/create_workdrive_folder.dg と同じ（直すときは両方直す）。違うのは、結果を画面に出すことと、
+	// すでに URL がある商談ではそのフォルダを開くことだけ。ボタンの設定で、引数 deal_id に「商談 Id」をマッピングすること。
+	//   企業フォルダ：<顧客企業名>_<顧客企業の ID>（名前の末尾が同じ企業の ID のフォルダがあれば作らずに使う）
+	//   商談フォルダ：<商談名>_<商談の ID>（名前の末尾が同じ商談の ID のフォルダがあれば作らずに使う）
+	// CRM に書くのは商談の「WorkDriveフォルダ」だけ（updateRecord はワークフローを起動しない）。
+	// WorkDrive では作るだけで、フォルダ・ファイルの削除や名前の変更はしない。
+	// WorkDrive の API は公式ドキュメント（2026-11-23 確認）：作成 POST /files（WorkDrive.files.CREATE）、
+	// 一覧 GET /files/{ID}/files（page[limit] は最大 50、page[offset]、filter[type]=folder。応答の data[].attributes に name・permalink）。
+	// 手順は docs/workdrive-folders.md。
+	//
+	// ---- 設定 ----
+	// 企業フォルダを作る親（WorkDrive のチームフォルダ）の ID。チームフォルダを開いたときの URL の末尾の英数字
+	PARENT_FOLDER_ID = "<チームフォルダの ID>";
+	// Zoho WorkDrive の API（US DC）
+	WD_API = "https://www.zohoapis.com/workdrive/api/v1";
+	// 商談の項目の API 名
+	F_DEAL_NAME = "Deal_Name";
+	F_ACCOUNT = "Account_Name";
+	F_FOLDER_URL = "WorkDrive_Folder";
+	// 一覧を読むページ（1ページ 50 件。フォルダが 2,000 を超えたら足す）
+	PAGES = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39};
+	// ※ 接続名（invokeurl の connection）は変数にできないので、下の "workdrive_conn" を直接書いている
+	//
+	info "===== create_workdrive_folder START deal_id=" + ifnull(deal_id,"(空)") + " =====";
+	if(deal_id == null || deal_id.trim() == "")
+	{
+		info "[wd] 中止: deal_id が空です。ワークフローの引数のマッピング（deal_id = 商談 Id）を確認してください";
+		return "フォルダを作成できませんでした：ボタンの設定で、引数 deal_id に「商談 Id」が割り当てられていません";
+	}
+	if(PARENT_FOLDER_ID.startsWith("<"))
+	{
+		info "[wd] 中止: 設定の PARENT_FOLDER_ID（チームフォルダの ID）が未設定です";
+		return "フォルダを作成できませんでした：関数の設定 PARENT_FOLDER_ID（チームフォルダの ID）が未設定です";
+	}
+	dealId = deal_id.trim();
+	// ---- STEP1 商談を読む ----
+	deal = zoho.crm.getRecordById("Deals",dealId.toLong());
+	if(deal == null || deal.get("id") == null)
+	{
+		info "[wd] 中止: 商談を取得できません res=" + ifnull(deal,"null").toString();
+		return "フォルダを作成できませんでした：商談を読めませんでした";
+	}
+	dealName = ifnull(deal.get(F_DEAL_NAME),"").toString().trim();
+	existingUrl = ifnull(deal.get(F_FOLDER_URL),"").toString().trim();
+	account = deal.get(F_ACCOUNT);
+	accountId = "";
+	accountName = "";
+	if(account != null)
+	{
+		accountId = ifnull(account.get("id"),"").toString();
+		accountName = ifnull(account.get("name"),"").toString().trim();
+	}
+	info "[wd] STEP1 商談名=" + dealName + " 顧客企業 ID=" + accountId + " 顧客企業名=" + accountName + " 既存の URL=" + existingUrl;
+	if(existingUrl != "")
+	{
+		info "[wd] すでに WorkDriveフォルダ が入っています（作らずに開く）";
+		openUrl(existingUrl,"new window");
+		return "この商談のフォルダは作成済みです（新しいタブで開きます）";
+	}
+	if(accountId == "")
+	{
+		info "[wd] 中止: 顧客企業名が空です（入れて保存すると、ワークフローがもう一度呼びます）";
+		return "フォルダを作成できませんでした：顧客企業名が空です。顧客企業名を入れて保存してから、もう一度押してください";
+	}
+	// フォルダ名に使えない記号（/ : * ? < > |）を全角の「＿」にする。名前は 200 文字まで（公式）
+	accountFolderName = accountName.replaceAll("[/:*?<>|]","＿") + "_" + accountId;
+	dealFolderName = dealName.replaceAll("[/:*?<>|]","＿") + "_" + dealId;
+	headerMap = Map();
+	headerMap.put("Accept","application/vnd.api+json");
+	// ---- STEP2・3 企業フォルダを探す（名前の末尾が「_<顧客企業の ID>」。企業名が変わっても同じフォルダを使う）→ 無ければ作る ----
+	// 作成の応答の形は公式の例から読み取れないので、作ったあとにもう一度一覧から ID を読む
+	accountFolderId = "";
+	for each attempt in {1,2}
+	{
+		listError = "";
+		for each page in PAGES
+		{
+			resp = invokeurl
+			[
+				url :WD_API + "/files/" + PARENT_FOLDER_ID + "/files?filter%5Btype%5D=folder&page%5Blimit%5D=50&page%5Boffset%5D=" + page * 50
+				type :GET
+				headers:headerMap
+				connection:"workdrive_conn"
+			];
+			// 中身が空のフォルダは 204（本文なし）が返る → 例外になるので空として扱う
+			items = list();
+			try 
+			{
+				items = resp.get("data");
+			}
+			catch (e)
+			{
+				items = list();
+			}
+			if(items == null)
+			{
+				// 失敗の応答は {"errors":[{"id":"R008","title":"Unauthorized access"}]} の形（公式）
+				listError = ifnull(resp,"応答なし").toString();
+				break;
+			}
+			info "[wd] STEP2 企業フォルダの一覧 attempt=" + attempt + " page=" + page + " 件数=" + items.size();
+			for each item in items
+			{
+				itemAttrs = item.get("attributes");
+				if(itemAttrs != null && ifnull(itemAttrs.get("name"),"").toString().endsWith("_" + accountId))
+				{
+					accountFolderId = item.get("id").toString();
+					break;
+				}
+			}
+			if(accountFolderId != "" || items.size() < 50)
+			{
+				break;
+			}
+		}
+		if(listError != "")
+		{
+			info "[wd] ERROR: 企業フォルダの一覧を読めませんでした（接続・チームフォルダの ID・権限を確認） 応答=" + listError;
+			return "フォルダを作成できませんでした：WorkDrive を読めませんでした（接続・チームフォルダの ID・権限を確認してください）";
+		}
+		if(accountFolderId != "" || attempt == 2)
+		{
+			break;
+		}
+		// 作成の本文は公式の例の形：{"data":{"attributes":{"parent_id":…,"name":…},"type":"files"}}
+		newAttrs = Map();
+		newAttrs.put("parent_id",PARENT_FOLDER_ID);
+		newAttrs.put("name",accountFolderName);
+		dataMap = Map();
+		dataMap.put("attributes",newAttrs);
+		dataMap.put("type","files");
+		body = Map();
+		body.put("data",dataMap);
+		info "[wd] STEP3 企業フォルダを作成 name=" + accountFolderName;
+		created = invokeurl
+		[
+			url :WD_API + "/files"
+			type :POST
+			parameters:body.toString()
+			headers:headerMap
+			connection:"workdrive_conn"
+		];
+		info "[wd] STEP3 生レスポンス=" + created;
+	}
+	if(accountFolderId == "")
+	{
+		// 失敗の応答は {"errors":[{"id":"R002","title":"Folder with same name exists"}]} の形（公式）
+		info "[wd] ERROR: 企業フォルダを作れませんでした（上の STEP3 の生レスポンスを確認）";
+		return "フォルダを作成できませんでした：企業フォルダを作れませんでした。少し待ってもう一度押してください（関数のログに理由が出ます）";
+	}
+	info "[wd] STEP3 企業フォルダ id=" + accountFolderId;
+	// ---- STEP4 商談フォルダを探す（作り直しのとき。名前の末尾が「_<商談の ID>」）→ 無ければ作る → 一覧から URL を読む ----
+	dealFolderId = "";
+	dealFolderUrl = "";
+	for each attempt in {1,2}
+	{
+		for each page in PAGES
+		{
+			resp = invokeurl
+			[
+				url :WD_API + "/files/" + accountFolderId + "/files?filter%5Btype%5D=folder&page%5Blimit%5D=50&page%5Boffset%5D=" + page * 50
+				type :GET
+				headers:headerMap
+				connection:"workdrive_conn"
+			];
+			items = list();
+			try
+			{
+				items = resp.get("data");
+			}
+			catch (e)
+			{
+				items = list();
+			}
+			if(items == null)
+			{
+				items = list();
+			}
+			for each item in items
+			{
+				itemAttrs = item.get("attributes");
+				if(itemAttrs != null && ifnull(itemAttrs.get("name"),"").toString().endsWith("_" + dealId))
+				{
+					dealFolderId = item.get("id").toString();
+					dealFolderUrl = ifnull(itemAttrs.get("permalink"),"").toString();
+					break;
+				}
+			}
+			if(dealFolderId != "" || items.size() < 50)
+			{
+				break;
+			}
+		}
+		info "[wd] STEP4 商談フォルダの確認 attempt=" + attempt + " id=" + dealFolderId;
+		if(dealFolderId != "" || attempt == 2)
+		{
+			break;
+		}
+		// 1回目に見つからなければ作り、2回目の一覧で URL（permalink）を読む
+		newAttrs = Map();
+		newAttrs.put("parent_id",accountFolderId);
+		newAttrs.put("name",dealFolderName);
+		dataMap = Map();
+		dataMap.put("attributes",newAttrs);
+		dataMap.put("type","files");
+		body = Map();
+		body.put("data",dataMap);
+		info "[wd] STEP4 商談フォルダを作成 name=" + dealFolderName;
+		created = invokeurl
+		[
+			url :WD_API + "/files"
+			type :POST
+			parameters:body.toString()
+			headers:headerMap
+			connection:"workdrive_conn"
+		];
+		info "[wd] STEP4 生レスポンス=" + created;
+	}
+	if(dealFolderId == "" || dealFolderUrl == "")
+	{
+		info "[wd] ERROR: 商談フォルダを作れなかったか、URL を読めませんでした id=" + dealFolderId;
+		return "フォルダを作成できませんでした：商談フォルダを作れなかったか、URL を読めませんでした。少し待ってもう一度押してください（二重には作りません）";
+	}
+	// ---- STEP5 商談に URL を書く（この項目だけ。ワークフローは起動しない） ----
+	updateMap = Map();
+	updateMap.put(F_FOLDER_URL,dealFolderUrl);
+	res = zoho.crm.updateRecord("Deals",dealId.toLong(),updateMap);
+	info "[wd] STEP5 商談の更新 生レスポンス=" + res;
+	if(res.get("id") == null)
+	{
+		info "[wd] ERROR: 商談に URL を書けませんでした（項目 " + F_FOLDER_URL + " があるか確認）";
+		return "フォルダは作りましたが、商談に URL を書けませんでした（項目「WorkDriveフォルダ」の API 名を確認してください）";
+	}
+	info "[wd] ===== SUCCESS 企業フォルダ=" + accountFolderId + " 商談フォルダ=" + dealFolderId + " =====";
+	openUrl(dealFolderUrl,"new window");
+	return "WorkDrive にフォルダを作成しました（新しいタブで開きます）";
+}
