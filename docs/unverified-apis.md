@@ -189,14 +189,16 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 
 ## 商談ごとの WorkDrive フォルダ（docs/workdrive-folders.md、2026-11-23 追加）
 
-WorkDrive の公式ドキュメント（workdrive.zoho.com/apidocs）はこの作業環境から開けず、検索結果の抜粋で書いた。最初の試験で関数のログの生レスポンスを見て確かめる。
+2026-11-23 に公式ドキュメント（www.zoho.com/workdrive/developer/docs/api/v1/ の create-folder・list-files-folders-inside-a-folder）で確認：
+作成 `POST /workdrive/api/v1/files`（本文 `data.attributes.parent_id`・`name`、`type: files`、スコープ `WorkDrive.files.CREATE`、同名は `R002`）、
+一覧 `GET /workdrive/api/v1/files/{ID}/files`（スコープ `WorkDrive.files.READ`、`page[limit]` 最大 50・`page[offset]`・`filter[type]=folder`、
+応答 `data[].id`・`attributes.name`・`permalink`、空なら 204）。残りは最初の試験で関数のログを見て確かめる。
 
 | # | 項目 | 実装での想定 | 該当箇所 |
 |---|---|---|---|
-| WD1 | `zoho.workdrive.createFolder(名前, 親の ID, 接続)` の応答 | Deluge 公式ヘルプに構文はある。応答の `data.id` と `data.attributes.permalink`（コミュニティの回答）を読む。permalink が無ければ `https://workdrive.zoho.com/folder/<ID>` | `crm/create_workdrive_folder.dg` |
-| WD2 | フォルダ内の一覧 `GET https://www.zohoapis.com/workdrive/api/v1/files/{ID}/files` | ヘッダー `Accept: application/vnd.api+json`、`page[limit]` は最大 50（公式の抜粋）。`page[offset]` に 0, 50, 100 … を渡す（古い例。公式は2回目以降はページのトークンとも書いている）。応答は `data[].id`・`data[].attributes.name` | `crm/create_workdrive_folder.dg` |
-| WD3 | 接続のスコープ | `WorkDrive.files.ALL`（作成は `WorkDrive.files.CREATE`、一覧は `WorkDrive.files.READ` というコミュニティの記述） | docs/workdrive-folders.md の手順3 |
-| WD4 | 同じ親に同じ名前のフォルダを作ったとき | 未確認（関数は先に名前の末尾の ID で探すので、ふつうは起きない） | `crm/create_workdrive_folder.dg` |
+| WD1 | 作成の応答の形 | 公式の例は汎用の形で、新しい ID の場所が読み取れない → 関数は作成後にもう一度一覧を読んで ID・permalink を取る | `crm/create_workdrive_folder.dg` |
+| WD2 | `permalink` をブラウザで開けるか | 公式の例は `https://www.zohoapis.com/workdrive/folder/<ID>`。開けなければ URL の組み立てを足す | `crm/create_workdrive_folder.dg` |
+| WD3 | 作った直後に一覧に出るか | 出なければ ERROR で止まり、次に商談を保存したときに見つけて URL を書く（同名は R002 なので二重には作らない） | `crm/create_workdrive_folder.dg` |
 
 ## 優先度：中（動くが挙動が変わる）
 

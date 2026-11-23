@@ -44,7 +44,7 @@
 
 1. サービス：「Zoho WorkDrive」
 2. 接続名：`workdrive_conn`（**接続のリンク名がこの名前になっていること**。関数の中に直接書いている）
-3. スコープ：`WorkDrive.files.ALL`（フォルダの作成と一覧に使う）
+3. スコープ：`WorkDrive.files.READ`（一覧）と `WorkDrive.files.CREATE`（フォルダの作成）の2つ（公式ドキュメントで確認）
 4. 「作成して接続」→ 手順1のチームフォルダに入れる Zoho アカウント（管理者）で承認する
 
 ### 4. 関数を作る
@@ -74,6 +74,7 @@
 3. 同じ顧客企業でもう1件作り、WorkDrive で企業フォルダが1つのまま、その下に商談フォルダが2つになることを確かめる
 4. 関数のログ（設定 →「開発者向け機能」→「関数」→「WorkDrive フォルダの作成」）に `===== SUCCESS` が出る。
    `STEP3 生レスポンス=` と `STEP4 生レスポンス=` の行を送る（応答の形を記録するため。下の「未確認」）
+5. 商談の URL を開き、WorkDrive の商談フォルダが開くことを確かめる（URL の形は下の「未確認」）
 
 ## うまくいかないとき
 
@@ -84,11 +85,21 @@
 | `PARENT_FOLDER_ID … が未設定` | 手順4の 4 |
 | `企業フォルダの一覧を読めませんでした` | 接続（手順3）の名前・スコープ、チームフォルダの ID、承認したアカウントがチームフォルダのメンバーか |
 | `商談に URL を書けませんでした` | 商談の項目の API 名（手順2） |
+| `企業フォルダを作れませんでした`／`商談フォルダを作れなかったか、URL を読めませんでした` | すぐ上の `生レスポンス=` を見る。`F7004`（スコープ不足）なら手順3。作った直後のフォルダが一覧にまだ出なかっただけなら、商談をもう一度保存すると、作ったフォルダを見つけて URL を書く（二重には作らない） |
 | URL を開くと「アクセス権がない」 | 開いた人がチームフォルダのメンバーではない（手順1） |
 
-## 未確認（WorkDrive の公式ドキュメントはこの作業環境から開けず、検索結果の抜粋で書いた。docs/unverified-apis.md の WD1〜WD4）
+## WorkDrive の API（公式ドキュメントで確認、2026-11-23）
 
-- `zoho.workdrive.createFolder` の応答の形（`data.id`・`data.attributes.permalink` を読む。permalink が無ければ
-  `https://workdrive.zoho.com/folder/<ID>` を URL にする）
-- 一覧（`GET /workdrive/api/v1/files/{ID}/files`）の `page[offset]` に数字（0, 50, 100 …）を渡せるか（公式は2回目以降はページのトークンとも書いている）
-- 同じ親に同じ名前のフォルダを作ったときの動き（関数は先に探してから作るので、ふつうは起きない）
+- 作成：`POST https://www.zohoapis.com/workdrive/api/v1/files`、本文 `{"data":{"attributes":{"parent_id":"<親の ID>","name":"<名前>"},"type":"files"}}`、
+  スコープ `WorkDrive.files.CREATE`。`parent_id` はフォルダかチームフォルダの ID。名前は 200 文字まで。
+  同じ名前があると `R002`（Folder with same name exists）、親の ID が違うと `R602`、スコープ不足は `F7004`
+- 一覧：`GET https://www.zohoapis.com/workdrive/api/v1/files/{ID}/files`、スコープ `WorkDrive.files.READ`。
+  `page[limit]` は最大 50、`page[offset]` で始まりの位置、`filter[type]=folder` でフォルダだけ。
+  応答の `data[].id`・`data[].attributes.name`・`is_folder`・`permalink`。中身が空なら 204（本文なし）
+- 関数は、作成の応答の形に頼らず、作ったあとにもう一度一覧を読んで ID と URL（`permalink`）を取る
+
+## 未確認
+
+- 作成の応答の形（公式の例は汎用の形で、新しいフォルダの ID の場所が読み取れない。関数は一覧から読むので影響しない）
+- `permalink` を開くとブラウザで WorkDrive のフォルダが開くか（公式の例は `https://www.zohoapis.com/workdrive/folder/<ID>` の形）
+- 作った直後のフォルダが、すぐに一覧に出るか
