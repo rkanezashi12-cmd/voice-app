@@ -1,0 +1,222 @@
+void automation.create_workdrive_folder(String deal_id)
+{
+	// 商談を作ったら、WorkDrive に「顧客企業のフォルダ」と、その下の「商談のフォルダ」を作り、
+	// 商談のフォルダの URL を商談の項目「WorkDriveフォルダ」に書く（マルサン木型。2026-11-23 ユーザーの指示）。
+	// ワークフロー「WorkDrive フォルダの作成」から呼ぶ。引数 deal_id に「商談 Id」をマッピングすること
+	// （マッピングが無いと deal_id が空になり、何もせずに終わる。そのときはログに「deal_id が空」と出る）。
+	//   企業フォルダ：<顧客企業名>_<顧客企業の ID>（同じ企業の ID のフォルダがあれば作らずに使う）
+	//   商談フォルダ：<商談名>_<商談の ID>（同じ商談の ID のフォルダがあれば作らずに使う）
+	// CRM に書くのは商談の「WorkDriveフォルダ」だけ（updateRecord はワークフローを起動しない）。
+	// WorkDrive では作るだけで、フォルダ・ファイルの削除や名前の変更はしない。
+	// 手順は docs/workdrive-folders.md。
+	//
+	// ---- 設定 ----
+	// 企業フォルダを作る親（WorkDrive のチームフォルダ）の ID。チームフォルダを開いたときの URL の末尾の英数字
+	PARENT_FOLDER_ID = "<チームフォルダの ID>";
+	// Zoho WorkDrive の API（US DC）
+	WD_API = "https://www.zohoapis.com/workdrive/api/v1";
+	// 商談の項目の API 名
+	F_DEAL_NAME = "Deal_Name";
+	F_ACCOUNT = "Account_Name";
+	F_FOLDER_URL = "WorkDrive_Folder";
+	// WorkDrive のフォルダを開く URL（作成の応答に permalink が無いときに使う。docs/workdrive-folders.md の「未確認」）
+	WD_FOLDER_URL = "https://workdrive.zoho.com/folder/";
+	// 一覧を読むページ数の上限（1ページ 50 件。企業フォルダが 2,000 を超えたら増やす）
+	PAGES = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39};
+	// ※ 接続名（invokeurl・createFolder の connection）は変数にできないので、下の "workdrive_conn" を直接書いている
+	//
+	info "===== create_workdrive_folder START deal_id=" + ifnull(deal_id,"(空)") + " =====";
+	if(deal_id == null || deal_id.trim() == "")
+	{
+		info "[wd] 中止: deal_id が空です。ワークフローの引数のマッピング（deal_id = 商談 Id）を確認してください";
+		return;
+	}
+	if(PARENT_FOLDER_ID.startsWith("<"))
+	{
+		info "[wd] 中止: 設定の PARENT_FOLDER_ID（チームフォルダの ID）が未設定です";
+		return;
+	}
+	// ---- STEP1 商談を読む ----
+	deal = zoho.crm.getRecordById("Deals",deal_id.trim().toLong());
+	if(deal == null || deal.get("id") == null)
+	{
+		info "[wd] 中止: 商談を取得できません res=" + ifnull(deal,"null").toString();
+		return;
+	}
+	dealName = ifnull(deal.get(F_DEAL_NAME),"").toString().trim();
+	existingUrl = ifnull(deal.get(F_FOLDER_URL),"").toString().trim();
+	account = deal.get(F_ACCOUNT);
+	accountId = "";
+	accountName = "";
+	if(account != null)
+	{
+		accountId = ifnull(account.get("id"),"").toString();
+		accountName = ifnull(account.get("name"),"").toString().trim();
+	}
+	info "[wd] STEP1 商談名=" + dealName + " 顧客企業 ID=" + accountId + " 顧客企業名=" + accountName + " 既存の URL=" + existingUrl;
+	if(existingUrl != "")
+	{
+		info "[wd] 中止: すでに WorkDriveフォルダ が入っています（二重に作りません）";
+		return;
+	}
+	if(accountId == "")
+	{
+		info "[wd] 中止: 顧客企業名が空です（入れて保存すると、ワークフローがもう一度呼びます）";
+		return;
+	}
+	// フォルダ名に使えない記号（/ : * ? < > |）を全角の「＿」にする
+	accountFolderName = accountName.replaceAll("[/:*?<>|]","＿") + "_" + accountId;
+	dealFolderName = dealName.replaceAll("[/:*?<>|]","＿") + "_" + deal_id.trim();
+	headerMap = Map();
+	headerMap.put("Accept","application/vnd.api+json");
+	// ---- STEP2 企業フォルダを探す（名前の末尾が「_<顧客企業の ID>」のフォルダ。企業名が変わっても同じフォルダを使う） ----
+	accountFolderId = "";
+	listError = "";
+	for each page in PAGES
+	{
+		url = WD_API + "/files/" + PARENT_FOLDER_ID + "/files?page%5Blimit%5D=50&page%5Boffset%5D=" + page * 50;
+		resp = invokeurl
+		[
+			url :url
+			type :GET
+			headers:headerMap
+			connection:"workdrive_conn"
+		];
+		items = list();
+		try
+		{
+			items = resp.get("data");
+		}
+		catch (e)
+		{
+			items = list();
+		}
+		if(items == null)
+		{
+			listError = ifnull(resp,"応答なし").toString();
+			break;
+		}
+		info "[wd] STEP2 企業フォルダの一覧 page=" + page + " 件数=" + items.size();
+		for each item in items
+		{
+			attrs = item.get("attributes");
+			if(attrs != null && ifnull(attrs.get("name"),"").toString().endsWith("_" + accountId))
+			{
+				accountFolderId = item.get("id").toString();
+				break;
+			}
+		}
+		if(accountFolderId != "" || items.size() < 50)
+		{
+			break;
+		}
+	}
+	if(listError != "")
+	{
+		info "[wd] ERROR: 企業フォルダの一覧を読めませんでした（接続・チームフォルダの ID・権限を確認） 応答=" + listError;
+		return;
+	}
+	// ---- STEP3 企業フォルダが無ければ作る ----
+	if(accountFolderId == "")
+	{
+		info "[wd] STEP3 企業フォルダを作成 name=" + accountFolderName;
+		created = zoho.workdrive.createFolder(accountFolderName,PARENT_FOLDER_ID,"workdrive_conn");
+		info "[wd] STEP3 生レスポンス=" + created;
+		try
+		{
+			accountFolderId = created.get("data").get("id").toString();
+		}
+		catch (e)
+		{
+			accountFolderId = "";
+		}
+		if(accountFolderId == "")
+		{
+			info "[wd] ERROR: 企業フォルダを作れませんでした";
+			return;
+		}
+	}
+	else
+	{
+		info "[wd] STEP3 既存の企業フォルダを使う id=" + accountFolderId;
+	}
+	// ---- STEP4 商談フォルダ（作り直しのときは既存を使う。名前の末尾が「_<商談の ID>」） ----
+	dealFolderId = "";
+	dealFolderUrl = "";
+	resp = invokeurl
+	[
+		url :WD_API + "/files/" + accountFolderId + "/files?page%5Blimit%5D=50&page%5Boffset%5D=0"
+		type :GET
+		headers:headerMap
+		connection:"workdrive_conn"
+	];
+	items = list();
+	try
+	{
+		items = resp.get("data");
+	}
+	catch (e)
+	{
+		items = list();
+	}
+	if(items == null)
+	{
+		items = list();
+	}
+	for each item in items
+	{
+		attrs = item.get("attributes");
+		if(attrs != null && ifnull(attrs.get("name"),"").toString().endsWith("_" + deal_id.trim()))
+		{
+			dealFolderId = item.get("id").toString();
+			dealFolderUrl = ifnull(attrs.get("permalink"),"").toString();
+			break;
+		}
+	}
+	if(dealFolderId == "")
+	{
+		info "[wd] STEP4 商談フォルダを作成 name=" + dealFolderName;
+		created = zoho.workdrive.createFolder(dealFolderName,accountFolderId,"workdrive_conn");
+		info "[wd] STEP4 生レスポンス=" + created;
+		try
+		{
+			dealFolderId = created.get("data").get("id").toString();
+		}
+		catch (e)
+		{
+			dealFolderId = "";
+		}
+		try
+		{
+			dealFolderUrl = ifnull(created.get("data").get("attributes").get("permalink"),"").toString();
+		}
+		catch (e)
+		{
+			dealFolderUrl = "";
+		}
+		if(dealFolderId == "")
+		{
+			info "[wd] ERROR: 商談フォルダを作れませんでした";
+			return;
+		}
+	}
+	else
+	{
+		info "[wd] STEP4 既存の商談フォルダを使う id=" + dealFolderId;
+	}
+	if(dealFolderUrl == "")
+	{
+		dealFolderUrl = WD_FOLDER_URL + dealFolderId;
+	}
+	// ---- STEP5 商談に URL を書く（この項目だけ。ワークフローは起動しない） ----
+	updateMap = Map();
+	updateMap.put(F_FOLDER_URL,dealFolderUrl);
+	res = zoho.crm.updateRecord("Deals",deal_id.trim().toLong(),updateMap);
+	info "[wd] STEP5 商談の更新 生レスポンス=" + res;
+	if(res.get("id") == null)
+	{
+		info "[wd] ERROR: 商談に URL を書けませんでした（項目 " + F_FOLDER_URL + " があるか確認）";
+		return;
+	}
+	info "[wd] ===== SUCCESS 企業フォルダ=" + accountFolderId + " 商談フォルダ=" + dealFolderId + " =====";
+}

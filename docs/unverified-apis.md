@@ -187,6 +187,17 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 | 添付の一覧（権限の確認） | `GET /crm/v8/MeetingRecords/{id}/Attachments?fields=id,File_Name`。権限以外のエラー（形の違い）は「権限はある」とみなす | `scripts/crm_setup.py` の `check_access` |
 | ファイルの大きさ | `.txt` で数百 KB（3時間の会話でも 1MB 未満）。添付の上限（20MB とされる）に届かない想定 | — |
 
+## 商談ごとの WorkDrive フォルダ（docs/workdrive-folders.md、2026-11-23 追加）
+
+WorkDrive の公式ドキュメント（workdrive.zoho.com/apidocs）はこの作業環境から開けず、検索結果の抜粋で書いた。最初の試験で関数のログの生レスポンスを見て確かめる。
+
+| # | 項目 | 実装での想定 | 該当箇所 |
+|---|---|---|---|
+| WD1 | `zoho.workdrive.createFolder(名前, 親の ID, 接続)` の応答 | Deluge 公式ヘルプに構文はある。応答の `data.id` と `data.attributes.permalink`（コミュニティの回答）を読む。permalink が無ければ `https://workdrive.zoho.com/folder/<ID>` | `crm/create_workdrive_folder.dg` |
+| WD2 | フォルダ内の一覧 `GET https://www.zohoapis.com/workdrive/api/v1/files/{ID}/files` | ヘッダー `Accept: application/vnd.api+json`、`page[limit]` は最大 50（公式の抜粋）。`page[offset]` に 0, 50, 100 … を渡す（古い例。公式は2回目以降はページのトークンとも書いている）。応答は `data[].id`・`data[].attributes.name` | `crm/create_workdrive_folder.dg` |
+| WD3 | 接続のスコープ | `WorkDrive.files.ALL`（作成は `WorkDrive.files.CREATE`、一覧は `WorkDrive.files.READ` というコミュニティの記述） | docs/workdrive-folders.md の手順3 |
+| WD4 | 同じ親に同じ名前のフォルダを作ったとき | 未確認（関数は先に名前の末尾の ID で探すので、ふつうは起きない） | `crm/create_workdrive_folder.dg` |
+
 ## 優先度：中（動くが挙動が変わる）
 
 | # | 項目 | 実装での想定 | 該当箇所 |
