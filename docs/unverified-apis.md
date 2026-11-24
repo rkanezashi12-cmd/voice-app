@@ -192,13 +192,17 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 2026-11-23 に公式ドキュメント（www.zoho.com/workdrive/developer/docs/api/v1/ の create-folder・list-files-folders-inside-a-folder）で確認：
 作成 `POST /workdrive/api/v1/files`（本文 `data.attributes.parent_id`・`name`、`type: files`、スコープ `WorkDrive.files.CREATE`、同名は `R002`）、
 一覧 `GET /workdrive/api/v1/files/{ID}/files`（スコープ `WorkDrive.files.READ`、`page[limit]` 最大 50・`page[offset]`・`filter[type]=folder`、
-応答 `data[].id`・`attributes.name`・`permalink`、空なら 204）。残りは最初の試験で関数のログを見て確かめる。
+応答 `data[].id`・`attributes.name`・`permalink`）。
 
-| # | 項目 | 実装での想定 | 該当箇所 |
+**確認済み（2026-11-24、マルサン木型の本番組織。商談のボタン「フォルダを作成」で企業・商談のフォルダを作り、商談に URL を書くまで通った）**：
+
+| # | 項目 | 実物 | 該当箇所 |
 |---|---|---|---|
-| WD1 | 作成の応答の形 | 公式の例は汎用の形で、新しい ID の場所が読み取れない → 関数は作成後にもう一度一覧を読んで ID・permalink を取る | `crm/create_workdrive_folder.dg` |
-| WD2 | `permalink` をブラウザで開けるか | 公式の例は `https://www.zohoapis.com/workdrive/folder/<ID>`。開けなければ URL の組み立てを足す | `crm/create_workdrive_folder.dg` |
-| WD3 | 作った直後に一覧に出るか | 出なければ ERROR で止まり、次に商談を保存したときに見つけて URL を書く（同名は R002 なので二重には作らない） | `crm/create_workdrive_folder.dg` |
+| WD1 | 作成の応答 | HTTP 201。`{"data":{"id":"…","type":"files","attributes":{"name":…,"parent_id":…,"permalink":…,"is_folder":true,…}}}`（JSON:API の形。公式の例の汎用の形ではない）。関数は作成後に一覧から読み直しているので、どちらでも動く | `crm/create_workdrive_folder*.dg` |
+| WD2 | `permalink` | `https://workdrive.zoho.com/folder/<ID>`（公式の例の `https://www.zohoapis.com/workdrive/folder/<ID>` ではない） | 同上 |
+| WD3 | 作った直後の一覧 | 作成の直後（約30ミリ秒後）の一覧に出た | 同上 |
+| WD4 | 中身が空のフォルダの一覧 | HTTP 200・`data` が空（公式の説明は 204）。関数はどちらでも空として扱う | 同上 |
+| WD5 | 接続 | CRM の接続（サービス Zoho WorkDrive、スコープ `WorkDrive.files.READ`・`WorkDrive.files.CREATE`）のリンク名が、表示名から自動で `workdriveconn` になった（アンダースコア無し）。`invokeurl` の `connection:` はリンク名と完全に一致させる（違うと保存時に `Connection '…' does not exist`） | docs/workdrive-folders.md の手順3 |
 
 ## 優先度：中（動くが挙動が変わる）
 

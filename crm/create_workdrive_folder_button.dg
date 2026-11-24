@@ -23,7 +23,7 @@ string button.create_workdrive_folder_button(String deal_id)
 	F_FOLDER_URL = "WorkDrive_Folder";
 	// 一覧を読むページ（1ページ 50 件。フォルダが 2,000 を超えたら足す）
 	PAGES = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39};
-	// ※ 接続名（invokeurl の connection）は変数にできないので、下の "workdrive_conn" を直接書いている
+	// ※ 接続名（invokeurl の connection）は変数にできないので、下の "workdriveconn" を直接書いている
 	//
 	info "===== create_workdrive_folder START deal_id=" + ifnull(deal_id,"(空)") + " =====";
 	if(deal_id == null || deal_id.trim() == "")
@@ -84,7 +84,7 @@ string button.create_workdrive_folder_button(String deal_id)
 				url :WD_API + "/files/" + PARENT_FOLDER_ID + "/files?filter%5Btype%5D=folder&page%5Blimit%5D=50&page%5Boffset%5D=" + page * 50
 				type :GET
 				headers:headerMap
-				connection:"workdrive_conn"
+				connection:"workdriveconn"
 			];
 			// 中身が空のフォルダは 204（本文なし）が返る → 例外になるので空として扱う
 			items = list();
@@ -142,7 +142,7 @@ string button.create_workdrive_folder_button(String deal_id)
 			type :POST
 			parameters:body.toString()
 			headers:headerMap
-			connection:"workdrive_conn"
+			connection:"workdriveconn"
 		];
 		info "[wd] STEP3 生レスポンス=" + created;
 	}
@@ -165,7 +165,7 @@ string button.create_workdrive_folder_button(String deal_id)
 				url :WD_API + "/files/" + accountFolderId + "/files?filter%5Btype%5D=folder&page%5Blimit%5D=50&page%5Boffset%5D=" + page * 50
 				type :GET
 				headers:headerMap
-				connection:"workdrive_conn"
+				connection:"workdriveconn"
 			];
 			items = list();
 			try
@@ -216,7 +216,7 @@ string button.create_workdrive_folder_button(String deal_id)
 			type :POST
 			parameters:body.toString()
 			headers:headerMap
-			connection:"workdrive_conn"
+			connection:"workdriveconn"
 		];
 		info "[wd] STEP4 生レスポンス=" + created;
 	}
