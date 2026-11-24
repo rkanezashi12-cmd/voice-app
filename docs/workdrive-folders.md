@@ -8,6 +8,9 @@
     すでに作ってある商談では、作らずにそのフォルダを開く（[crm/create_workdrive_folder_button.dg](../crm/create_workdrive_folder_button.dg)。手順4B）
   - **ワークフロー**：商談を作ったとき（顧客企業名があれば）自動で作る（[crm/create_workdrive_folder.dg](../crm/create_workdrive_folder.dg)。手順4・5）
   - 2つの関数は同じ処理（直すときは両方直す）。同じ商談で両方が動いても、二重には作らない
+  - **ボタン「フォルダを移動」**（2026-11-24 ユーザーの指示）：顧客企業を変えた商談で押すと、商談フォルダを今の企業フォルダの下へ移す
+    （[crm/move_workdrive_folder_button.dg](../crm/move_workdrive_folder_button.dg)。手順4C）
+- 企業フォルダは、一覧をカーソルで 1回 1,000 件ずつ読んで探す（20,000 件まで。企業は 2026-11 時点で約 2,200 件）
 - フォルダの階層
 
   ```
@@ -48,7 +51,8 @@
 
 1. サービス：「Zoho WorkDrive」
 2. 接続名：`workdriveconn`（**接続のリンク名がこの名前になっていること**。関数の中に直接書いている。マルサン木型は 2026-11-24 にこの名前で作成）
-3. スコープ：`WorkDrive.files.READ`（一覧）と `WorkDrive.files.CREATE`（フォルダの作成）の2つ（公式ドキュメントで確認）
+3. スコープ：`WorkDrive.files.READ`（一覧）・`WorkDrive.files.CREATE`（フォルダの作成）・`WorkDrive.files.UPDATE`（フォルダの移動。ボタン「フォルダを移動」を使うとき）（公式ドキュメントで確認）。
+   あとからスコープを足したときは、接続を開いて承認し直す
 4. 「作成して接続」→ 手順1のチームフォルダに入れる Zoho アカウント（管理者）で承認する
 
 ### 4. 関数を作る（ワークフロー用。自動で作るとき）
@@ -76,6 +80,19 @@
    （タブが開かないときは、ブラウザのポップアップのブロックを確かめる）
 
 ボタンだけを使うなら、手順4・5（ワークフロー）は要らない。
+
+### 4C. ボタン「フォルダを移動」を作る（2026-11-24 ユーザーの指示）
+
+フォルダを作ったあとで商談の顧客企業を別の会社に変えたとき、押すと商談フォルダを今の顧客企業のフォルダの下へ移す
+（企業フォルダが無ければ作る。フォルダの ID は変わらないので、商談の URL はそのまま）。すでに今の企業フォルダの中にあれば何もしない。
+
+1. 接続 `workdriveconn` にスコープ `WorkDrive.files.UPDATE` を足して、承認し直す（手順3）
+2. 手順4B と同じ流れで、ボタン名「フォルダを移動」、関数名 `move_workdrive_folder_button`、引数 `deal_id`（文字列）。
+   1行目が `string button.move_workdrive_folder_button(String deal_id)` になる
+3. 中身を [crm/move_workdrive_folder_button.dg](../crm/move_workdrive_folder_button.dg) にし、`PARENT_FOLDER_ID` を入れて保存。
+   **引数 `deal_id` に「商談 Id」を割り当てる**
+4. 試す：フォルダのある商談の顧客企業を別の会社に変えて保存 →「フォルダを移動」→「…のフォルダへ移動しました」と出て、
+   WorkDrive で商談フォルダが新しい企業フォルダの下にあれば成功。関数のログの `STEP5 生レスポンス=` の行を送る（応答の形の記録）
 
 ### 5. ワークフローを作る（自動で作るとき）
 

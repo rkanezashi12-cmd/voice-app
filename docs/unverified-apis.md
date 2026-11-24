@@ -204,6 +204,13 @@ Artifact Registry の古い版の自動削除（`scripts/setup_artifact_cleanup.
 | WD4 | 中身が空のフォルダの一覧 | HTTP 200・`data` が空（公式の説明は 204）。関数はどちらでも空として扱う | 同上 |
 | WD5 | 接続 | CRM の接続（サービス Zoho WorkDrive、スコープ `WorkDrive.files.READ`・`WorkDrive.files.CREATE`）のリンク名が、表示名から自動で `workdriveconn` になった（アンダースコア無し）。`invokeurl` の `connection:` はリンク名と完全に一致させる（違うと保存時に `Connection '…' does not exist`） | docs/workdrive-folders.md の手順3 |
 
+未確認（2026-11-24 追加。公式ドキュメント move-file-folder・list-files-folders-inside-a-folder で形は確認済み、実物はまだ）：
+
+| # | 項目 | 実装での想定 | 該当箇所 |
+|---|---|---|---|
+| WD6 | 移動 `PATCH /workdrive/api/v1/files/{ID}`（本文 `data.attributes.parent_id`、スコープ `WorkDrive.files.UPDATE`）の応答 | `data.attributes.parent_id` が移動先なら成功。読めなくても `errors` が無く `data` があれば成功とみなす。移動しても ID・permalink は変わらない想定 | `crm/move_workdrive_folder_button.dg` |
+| WD7 | 一覧のカーソル（`page[next]`） | 最初は `page[next]=0`、2回目からは応答の `links.cursor.next` の `page[next]=` のあとの値。`links.cursor.has_next` が true の間続ける。1回 1,000 件（公式）。`filter[type]=folder` と一緒に使えるか、`has_next` が真偽値か文字列かは未確認（どちらでも動くように書いた） | `crm/*workdrive_folder*.dg` |
+
 ## 優先度：中（動くが挙動が変わる）
 
 | # | 項目 | 実装での想定 | 該当箇所 |

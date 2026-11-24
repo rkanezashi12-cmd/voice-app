@@ -9,7 +9,7 @@ string button.create_workdrive_folder_button(String deal_id)
 	// CRM に書くのは商談の「WorkDriveフォルダ」だけ（updateRecord はワークフローを起動しない）。
 	// WorkDrive では作るだけで、フォルダ・ファイルの削除や名前の変更はしない。
 	// WorkDrive の API は公式ドキュメント（2026-11-23 確認）：作成 POST /files（WorkDrive.files.CREATE）、
-	// 一覧 GET /files/{ID}/files（page[limit] は最大 50、page[offset]、filter[type]=folder。応答の data[].attributes に name・permalink）。
+	// 一覧 GET /files/{ID}/files（filter[type]=folder、カーソルの page[next] で 1回 1,000 件。応答の data[].attributes に name・permalink、links.cursor）。
 	// 手順は docs/workdrive-folders.md。
 	//
 	// ---- 設定 ----
@@ -21,8 +21,8 @@ string button.create_workdrive_folder_button(String deal_id)
 	F_DEAL_NAME = "Deal_Name";
 	F_ACCOUNT = "Account_Name";
 	F_FOLDER_URL = "WorkDrive_Folder";
-	// 一覧を読むページ（1ページ 50 件。フォルダが 2,000 を超えたら足す）
-	PAGES = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39};
+	// 一覧はカーソルで 1回 1,000 件ずつ読む（公式の page[next]）。20 回まで＝ 20,000 件まで（企業は 2026-11 時点で約 2,200 件）
+	PAGES = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
 	// ※ 接続名（invokeurl の connection）は変数にできないので、下の "workdriveconn" を直接書いている
 	//
 	info "===== create_workdrive_folder START deal_id=" + ifnull(deal_id,"(空)") + " =====";
@@ -77,11 +77,12 @@ string button.create_workdrive_folder_button(String deal_id)
 	for each attempt in {1,2}
 	{
 		listError = "";
+		nextToken = "0";
 		for each page in PAGES
 		{
 			resp = invokeurl
 			[
-				url :WD_API + "/files/" + PARENT_FOLDER_ID + "/files?filter%5Btype%5D=folder&page%5Blimit%5D=50&page%5Boffset%5D=" + page * 50
+				url :WD_API + "/files/" + PARENT_FOLDER_ID + "/files?filter%5Btype%5D=folder&page%5Bnext%5D=" + nextToken
 				type :GET
 				headers:headerMap
 				connection:"workdriveconn"
@@ -112,7 +113,25 @@ string button.create_workdrive_folder_button(String deal_id)
 					break;
 				}
 			}
-			if(accountFolderId != "" || items.size() < 50)
+			// 次のページ：応答の links.cursor.next の page[next]= のあと（公式。1回 1,000 件）
+			nextToken = "";
+			try 
+			{
+				cursor = resp.get("links").get("cursor");
+				if(ifnull(cursor.get("has_next"),"").toString() == "true")
+				{
+					nextToken = cursor.get("next").toString().getSuffix("page[next]=");
+					if(nextToken.contains("&"))
+					{
+						nextToken = nextToken.getPrefix("&");
+					}
+				}
+			}
+			catch (e)
+			{
+				nextToken = "";
+			}
+			if(accountFolderId != "" || nextToken == "")
 			{
 				break;
 			}
@@ -158,11 +177,12 @@ string button.create_workdrive_folder_button(String deal_id)
 	dealFolderUrl = "";
 	for each attempt in {1,2}
 	{
+		nextToken = "0";
 		for each page in PAGES
 		{
 			resp = invokeurl
 			[
-				url :WD_API + "/files/" + accountFolderId + "/files?filter%5Btype%5D=folder&page%5Blimit%5D=50&page%5Boffset%5D=" + page * 50
+				url :WD_API + "/files/" + accountFolderId + "/files?filter%5Btype%5D=folder&page%5Bnext%5D=" + nextToken
 				type :GET
 				headers:headerMap
 				connection:"workdriveconn"
@@ -190,7 +210,25 @@ string button.create_workdrive_folder_button(String deal_id)
 					break;
 				}
 			}
-			if(dealFolderId != "" || items.size() < 50)
+			// 次のページ：応答の links.cursor.next の page[next]= のあと（公式。1回 1,000 件）
+			nextToken = "";
+			try 
+			{
+				cursor = resp.get("links").get("cursor");
+				if(ifnull(cursor.get("has_next"),"").toString() == "true")
+				{
+					nextToken = cursor.get("next").toString().getSuffix("page[next]=");
+					if(nextToken.contains("&"))
+					{
+						nextToken = nextToken.getPrefix("&");
+					}
+				}
+			}
+			catch (e)
+			{
+				nextToken = "";
+			}
+			if(dealFolderId != "" || nextToken == "")
 			{
 				break;
 			}
