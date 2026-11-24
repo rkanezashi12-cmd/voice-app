@@ -1,0 +1,299 @@
+string button.move_workdrive_folder_button(String deal_id)
+{
+	// 商談の画面のボタン「フォルダを移動」から呼ぶ（マルサン木型。2026-11-24 ユーザーの指示）。
+	// フォルダを作ったあとで商談の顧客企業を別の会社に変えたとき、商談フォルダを今の顧客企業のフォルダの下へ移す
+	// （企業フォルダが無ければ作る）。フォルダの ID は変わらないので、商談の「WorkDriveフォルダ」の URL はそのまま。
+	// CRM には書かない。WorkDrive では移すだけで、削除や名前の変更はしない。
+	// 企業フォルダを探す・作る部分は「フォルダを作成」（crm/create_workdrive_folder_button.dg）と同じ（直すときは両方直す）。
+	// WorkDrive の API は公式ドキュメント（2026-11-24 確認）：移動 PATCH /files/{ID}（本文 data.attributes.parent_id。
+	// スコープ WorkDrive.files.UPDATE → 接続 workdriveconn にこのスコープを足しておく）。
+	// ボタンの設定で、引数 deal_id に「商談 Id」をマッピングすること。手順は docs/workdrive-folders.md。
+	//
+	// ---- 設定 ----
+	// 企業フォルダを作る親（WorkDrive のチームフォルダ）の ID。チームフォルダを開いたときの URL の末尾の英数字
+	PARENT_FOLDER_ID = "<チームフォルダの ID>";
+	// Zoho WorkDrive の API（US DC）
+	WD_API = "https://www.zohoapis.com/workdrive/api/v1";
+	// 商談の項目の API 名
+	F_DEAL_NAME = "Deal_Name";
+	F_ACCOUNT = "Account_Name";
+	F_FOLDER_URL = "WorkDrive_Folder";
+	// 一覧はカーソルで 1回 1,000 件ずつ読む（公式の page[next]）。20 回まで＝ 20,000 件まで（企業は 2026-11 時点で約 2,200 件）
+	PAGES = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
+	// ※ 接続名（invokeurl の connection）は変数にできないので、下の "workdriveconn" を直接書いている
+	//
+	info "===== move_workdrive_folder START deal_id=" + ifnull(deal_id,"(空)") + " =====";
+	if(deal_id == null || deal_id.trim() == "")
+	{
+		return "フォルダを移動できませんでした：ボタンの設定で、引数 deal_id に「商談 Id」が割り当てられていません";
+	}
+	if(PARENT_FOLDER_ID.startsWith("<"))
+	{
+		return "フォルダを移動できませんでした：関数の設定 PARENT_FOLDER_ID（チームフォルダの ID）が未設定です";
+	}
+	dealId = deal_id.trim();
+	// ---- STEP1 商談を読む ----
+	deal = zoho.crm.getRecordById("Deals",dealId.toLong());
+	if(deal == null || deal.get("id") == null)
+	{
+		info "[wd] 中止: 商談を取得できません res=" + ifnull(deal,"null").toString();
+		return "フォルダを移動できませんでした：商談を読めませんでした";
+	}
+	existingUrl = ifnull(deal.get(F_FOLDER_URL),"").toString().trim();
+	account = deal.get(F_ACCOUNT);
+	accountId = "";
+	accountName = "";
+	if(account != null)
+	{
+		accountId = ifnull(account.get("id"),"").toString();
+		accountName = ifnull(account.get("name"),"").toString().trim();
+	}
+	info "[wd] STEP1 顧客企業 ID=" + accountId + " 顧客企業名=" + accountName + " URL=" + existingUrl;
+	if(existingUrl == "")
+	{
+		return "この商談にはまだフォルダがありません。「フォルダを作成」を押してください";
+	}
+	if(accountId == "")
+	{
+		return "フォルダを移動できませんでした：顧客企業名が空です。顧客企業名を入れて保存してから、もう一度押してください";
+	}
+	// URL（https://workdrive.zoho.com/folder/<ID>）から商談フォルダの ID を取る
+	dealFolderId = existingUrl.getSuffix("/folder/");
+	if(dealFolderId.contains("/"))
+	{
+		dealFolderId = dealFolderId.getPrefix("/");
+	}
+	if(dealFolderId.contains("?"))
+	{
+		dealFolderId = dealFolderId.getPrefix("?");
+	}
+	if(dealFolderId == "")
+	{
+		return "フォルダを移動できませんでした：「WorkDriveフォルダ」の URL からフォルダの ID を読めませんでした";
+	}
+	accountFolderName = accountName.replaceAll("[/:*?<>|]","＿") + "_" + accountId;
+	headerMap = Map();
+	headerMap.put("Accept","application/vnd.api+json");
+	// ---- STEP2・3 企業フォルダを探す（名前の末尾が「_<顧客企業の ID>」。企業名が変わっても同じフォルダを使う）→ 無ければ作る ----
+	// 作成の応答の形は公式の例から読み取れないので、作ったあとにもう一度一覧から ID を読む
+	accountFolderId = "";
+	for each attempt in {1,2}
+	{
+		listError = "";
+		nextToken = "0";
+		for each page in PAGES
+		{
+			resp = invokeurl
+			[
+				url :WD_API + "/files/" + PARENT_FOLDER_ID + "/files?filter%5Btype%5D=folder&page%5Bnext%5D=" + nextToken
+				type :GET
+				headers:headerMap
+				connection:"workdriveconn"
+			];
+			// 中身が空のフォルダは 204（本文なし）が返る → 例外になるので空として扱う
+			items = list();
+			try 
+			{
+				items = resp.get("data");
+			}
+			catch (e)
+			{
+				items = list();
+			}
+			if(items == null)
+			{
+				// 失敗の応答は {"errors":[{"id":"R008","title":"Unauthorized access"}]} の形（公式）
+				listError = ifnull(resp,"応答なし").toString();
+				break;
+			}
+			info "[wd] STEP2 企業フォルダの一覧 attempt=" + attempt + " page=" + page + " 件数=" + items.size();
+			for each item in items
+			{
+				itemAttrs = item.get("attributes");
+				if(itemAttrs != null && ifnull(itemAttrs.get("name"),"").toString().endsWith("_" + accountId))
+				{
+					accountFolderId = item.get("id").toString();
+					break;
+				}
+			}
+			// 次のページ：応答の links.cursor.next の page[next]= のあと（公式。1回 1,000 件）
+			nextToken = "";
+			try 
+			{
+				cursor = resp.get("links").get("cursor");
+				if(ifnull(cursor.get("has_next"),"").toString() == "true")
+				{
+					nextToken = cursor.get("next").toString().getSuffix("page[next]=");
+					if(nextToken.contains("&"))
+					{
+						nextToken = nextToken.getPrefix("&");
+					}
+				}
+			}
+			catch (e)
+			{
+				nextToken = "";
+			}
+			if(accountFolderId != "" || nextToken == "")
+			{
+				break;
+			}
+		}
+		if(listError != "")
+		{
+			info "[wd] ERROR: 企業フォルダの一覧を読めませんでした（接続・チームフォルダの ID・権限を確認） 応答=" + listError;
+			return "フォルダを移動できませんでした：WorkDrive を読めませんでした（接続・チームフォルダの ID・権限を確認してください）";
+		}
+		if(accountFolderId != "" || attempt == 2)
+		{
+			break;
+		}
+		// 作成の本文は公式の例の形：{"data":{"attributes":{"parent_id":…,"name":…},"type":"files"}}
+		newAttrs = Map();
+		newAttrs.put("parent_id",PARENT_FOLDER_ID);
+		newAttrs.put("name",accountFolderName);
+		dataMap = Map();
+		dataMap.put("attributes",newAttrs);
+		dataMap.put("type","files");
+		body = Map();
+		body.put("data",dataMap);
+		info "[wd] STEP3 企業フォルダを作成 name=" + accountFolderName;
+		created = invokeurl
+		[
+			url :WD_API + "/files"
+			type :POST
+			parameters:body.toString()
+			headers:headerMap
+			connection:"workdriveconn"
+		];
+		info "[wd] STEP3 生レスポンス=" + created;
+	}
+	if(accountFolderId == "")
+	{
+		// 失敗の応答は {"errors":[{"id":"R002","title":"Folder with same name exists"}]} の形（公式）
+		info "[wd] ERROR: 企業フォルダを作れませんでした（上の STEP3 の生レスポンスを確認）";
+		return "フォルダを移動できませんでした：企業フォルダを作れませんでした。少し待ってもう一度押してください（関数のログに理由が出ます）";
+	}
+	info "[wd] STEP3 企業フォルダ id=" + accountFolderId;
+	// ---- STEP4 商談フォルダが、すでに今の企業フォルダの中にあるか ----
+	alreadyThere = false;
+	nextToken = "0";
+	for each page in PAGES
+	{
+		resp = invokeurl
+		[
+			url :WD_API + "/files/" + accountFolderId + "/files?filter%5Btype%5D=folder&page%5Bnext%5D=" + nextToken
+			type :GET
+			headers:headerMap
+			connection:"workdriveconn"
+		];
+		items = list();
+		try 
+		{
+			items = resp.get("data");
+		}
+		catch (e)
+		{
+			items = list();
+		}
+		if(items == null)
+		{
+			items = list();
+		}
+		for each item in items
+		{
+			if(ifnull(item.get("id"),"").toString() == dealFolderId)
+			{
+				alreadyThere = true;
+				break;
+			}
+		}
+		// 次のページ：応答の links.cursor.next の page[next]= のあと（公式。1回 1,000 件）
+		nextToken = "";
+		try 
+		{
+			cursor = resp.get("links").get("cursor");
+			if(ifnull(cursor.get("has_next"),"").toString() == "true")
+			{
+				nextToken = cursor.get("next").toString().getSuffix("page[next]=");
+				if(nextToken.contains("&"))
+				{
+				nextToken = nextToken.getPrefix("&");
+				}
+			}
+		}
+		catch (e)
+		{
+			nextToken = "";
+		}
+		if(alreadyThere || nextToken == "")
+		{
+			break;
+		}
+	}
+	if(alreadyThere)
+	{
+		info "[wd] STEP4 すでに今の企業フォルダの中にある（移動しない）";
+		openUrl(existingUrl,"new window");
+		return "商談フォルダは、すでに今の顧客企業のフォルダの中にあります（移動はしていません）";
+	}
+	// ---- STEP5 商談フォルダを今の企業フォルダへ移す（公式の例の形：{"data":{"attributes":{"parent_id":…},"type":"files"}}） ----
+	moveAttrs = Map();
+	moveAttrs.put("parent_id",accountFolderId);
+	moveData = Map();
+	moveData.put("attributes",moveAttrs);
+	moveData.put("type","files");
+	moveBody = Map();
+	moveBody.put("data",moveData);
+	info "[wd] STEP5 商談フォルダを移動 id=" + dealFolderId + " 先=" + accountFolderId;
+	moved = invokeurl
+	[
+		url :WD_API + "/files/" + dealFolderId
+		type :PATCH
+		parameters:moveBody.toString()
+		headers:headerMap
+		connection:"workdriveconn"
+	];
+	info "[wd] STEP5 生レスポンス=" + moved;
+	// 移動の応答の形は未確認（docs/unverified-apis.md の WD6）。parent_id が今の企業フォルダなら成功。
+	// 読めなくても、errors が無く data が返っていれば成功とみなす
+	movedOk = false;
+	try 
+	{
+		movedParent = ifnull(moved.get("data").get("attributes").get("parent_id"),"").toString();
+		movedOk = movedParent == accountFolderId;
+	}
+	catch (e)
+	{
+		movedOk = false;
+	}
+	if(!movedOk)
+	{
+		try 
+		{
+			movedOk = moved.get("errors") == null && moved.get("data") != null;
+		}
+		catch (e)
+		{
+			movedOk = false;
+		}
+	}
+	if(!movedOk)
+	{
+		// 失敗の応答は {"errors":[{"id":"F7004","title":"Invalid OAuth scope"}]} などの形（公式）。F7004 は接続に WorkDrive.files.UPDATE が無い
+		reason = "";
+		try 
+		{
+			reason = moved.get("errors").get(0).get("id") + " " + moved.get("errors").get(0).get("title");
+		}
+		catch (e)
+		{
+			reason = "";
+		}
+		info "[wd] ERROR: 商談フォルダを移動できませんでした " + reason;
+		return "フォルダを移動できませんでした（" + reason + "）。接続 workdriveconn に WorkDrive.files.UPDATE があるか確認してください";
+	}
+	info "[wd] ===== SUCCESS 商談フォルダ=" + dealFolderId + " → 企業フォルダ=" + accountFolderId + " =====";
+	openUrl(existingUrl,"new window");
+	return "商談フォルダを、今の顧客企業（" + accountName + "）のフォルダへ移動しました（新しいタブで開きます）";
+}
