@@ -119,8 +119,10 @@
   応答の `data[].id`・`data[].attributes.name`・`is_folder`・`permalink`。中身が空なら 204（本文なし）
 - 関数は、作成の応答の形に頼らず、作ったあとにもう一度一覧を読んで ID と URL（`permalink`）を取る
 
-## 未確認
+## 記録
 
-- 作成の応答の形（公式の例は汎用の形で、新しいフォルダの ID の場所が読み取れない。関数は一覧から読むので影響しない）
-- `permalink` を開くとブラウザで WorkDrive のフォルダが開くか（公式の例は `https://www.zohoapis.com/workdrive/folder/<ID>` の形）
-- 作った直後のフォルダが、すぐに一覧に出るか
+| 日時 | 内容 | 結果 |
+|---|---|---|
+| 2026-11-24 10:54 | マルサン木型の本番組織で、テストの商談に「フォルダを作成」ボタン | チームフォルダに `<顧客企業名>_<企業ID>`、その下に `<商談名>_<商談ID>` ができ、商談の「WorkDriveフォルダ」に `https://workdrive.zoho.com/folder/<ID>` が入った（約1秒） |
+
+応答の形などの実物は docs/unverified-apis.md の WD1〜WD5。
