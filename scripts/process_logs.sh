@@ -26,6 +26,8 @@ EVENTS=(
   summarize.invalid_json dry_run.skip crm.updated gcs.deleted pipeline.finished pipeline.skipped_finished
   pipeline.retry pipeline.failed pipeline.failure_not_recorded pipeline.unexpected_error auth.oidc_rejected
   media.delete_failed
+  # 録音アプリのログイン（Zoho から戻ってきたか。始めたときは記録しない。docs/visit-app.md）
+  app.login app.login_rejected app.login_failed app.login_unavailable
   # 動画の解析（docs/video-analysis.md）
   video.batch_enqueued video.batch_retry video.batch_failed video.started video.split video.done video.skipped
   video.failed video.retry video.attachment_failed video.failure_not_recorded video.unexpected_error
@@ -36,8 +38,8 @@ for e in "${EVENTS[@]}"; do
 done
 FILTER+=')'
 
-echo "時刻,イベント,記録ID,状態,処理,モデル,文字数,出力文字数,考える量,入力トークン,出力トークン,考えたトークン,項目,用語数,削除数,秒,Recallのイベント,サブコード,エラーコード,エラー,HTTP,動画,動画の数,積んだ数"
+echo "時刻,イベント,記録ID,状態,処理,モデル,文字数,出力文字数,考える量,入力トークン,出力トークン,考えたトークン,項目,用語数,削除数,秒,Recallのイベント,サブコード,エラーコード,エラー,理由,HTTP,動画,動画の数,積んだ数"
 # --order=asc は遅いため、新しい順に取って手元で古い順に並べ替える
 gcloud logging read "$FILTER" --project="$PROJECT" --freshness="${MINUTES}m" --limit=300 \
-  --format='csv[no-heading](timestamp.date("%m-%d %H:%M:%S",tz=Asia/Tokyo),jsonPayload.message,jsonPayload.record_id,jsonPayload.status,jsonPayload.task,jsonPayload.model,jsonPayload.chars,jsonPayload.output_chars,jsonPayload.thinking,jsonPayload.input_tokens,jsonPayload.output_tokens,jsonPayload.thinking_tokens,jsonPayload.fields.join(sep=" "),jsonPayload.terms,jsonPayload.objects,jsonPayload.seconds,jsonPayload.event,jsonPayload.sub_code,jsonPayload.error_code,jsonPayload.error,httpRequest.status,jsonPayload.video,jsonPayload.videos,jsonPayload.enqueued)' |
+  --format='csv[no-heading](timestamp.date("%m-%d %H:%M:%S",tz=Asia/Tokyo),jsonPayload.message,jsonPayload.record_id,jsonPayload.status,jsonPayload.task,jsonPayload.model,jsonPayload.chars,jsonPayload.output_chars,jsonPayload.thinking,jsonPayload.input_tokens,jsonPayload.output_tokens,jsonPayload.thinking_tokens,jsonPayload.fields.join(sep=" "),jsonPayload.terms,jsonPayload.objects,jsonPayload.seconds,jsonPayload.event,jsonPayload.sub_code,jsonPayload.error_code,jsonPayload.error,jsonPayload.reason,httpRequest.status,jsonPayload.video,jsonPayload.videos,jsonPayload.enqueued)' |
   sort
